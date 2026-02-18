@@ -105,10 +105,12 @@ function openNote(note) {
     contentEl.value = note.content;
     imageDisplay.classList.add('hidden');
     imageDisplay.innerHTML = '';
-    contentEl.focus();
   }
   noteList.classList.add('hidden');
   editor.classList.remove('hidden');
+  if (!isImageNote(note)) {
+    requestAnimationFrame(() => contentEl.focus());
+  }
 }
 
 async function showList() {
