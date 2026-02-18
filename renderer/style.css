@@ -33,8 +33,14 @@ body {
   letter-spacing: 0.5px;
 }
 
-#new-btn {
+#titlebar-actions {
+  display: flex;
+  gap: 6px;
   -webkit-app-region: no-drag;
+}
+
+#new-btn,
+#image-btn {
   background: none;
   border: 1.5px solid #92400e;
   color: #92400e;
@@ -49,7 +55,12 @@ body {
   justify-content: center;
 }
 
-#new-btn:hover {
+#image-btn {
+  font-size: 14px;
+}
+
+#new-btn:hover,
+#image-btn:hover {
   background: #fbbf24;
 }
 
@@ -75,9 +86,28 @@ body {
   background: #fde68a;
 }
 
+.note-item.selected {
+  background: #fde68a;
+  outline: 2px solid #92400e;
+  outline-offset: -2px;
+}
+
 .note-item .note-preview {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.note-item .note-preview-image {
+  height: 40px;
+  margin: -4px 0;
+}
+
+.note-item .note-preview-image img {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  object-fit: cover;
+  border-radius: 4px;
 }
 
 .note-item .note-date {
@@ -122,6 +152,29 @@ body {
 
 #content::placeholder {
   color: #a16207;
+}
+
+#content.hidden {
+  display: none;
+}
+
+#image-display {
+  flex: 1;
+  padding: 10px 12px;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#image-display.hidden {
+  display: none;
+}
+
+#image-display img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
 }
 
 #editor-actions {

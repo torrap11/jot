@@ -39,4 +39,12 @@ function deleteNote(id) {
   getDb().prepare('DELETE FROM notes WHERE id = ?').run(id);
 }
 
-module.exports = { getAllNotes, createNote, updateNote, deleteNote };
+function restoreNote(note) {
+  getDb()
+    .prepare(
+      'INSERT INTO notes (id, content, created_at, updated_at) VALUES (?, ?, ?, ?)'
+    )
+    .run(note.id, note.content, note.created_at, note.updated_at);
+}
+
+module.exports = { getAllNotes, createNote, updateNote, deleteNote, restoreNote };
