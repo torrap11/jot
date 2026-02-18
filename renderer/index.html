@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jot</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="titlebar">
+    <span id="title">Jot</span>
+    <button id="new-btn" title="New note">+</button>
+  </div>
+
+  <div id="note-list"></div>
+
+  <div id="editor" class="hidden">
+    <textarea id="content" placeholder="Write something..."></textarea>
+    <div id="editor-actions">
+      <button id="back-btn">Back</button>
+      <button id="delete-btn">Delete</button>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
