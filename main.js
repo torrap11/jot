@@ -52,13 +52,18 @@ app.whenReady().then(() => {
 
   createWindow();
 
-  globalShortcut.register('Control+Option+Command+J', toggleWindow);
+  globalShortcut.register('Command+E', toggleWindow);
 
   ipcMain.handle('get-notes', () => db.getAllNotes());
   ipcMain.handle('create-note', (_e, content) => db.createNote(content));
   ipcMain.handle('update-note', (_e, id, content) => db.updateNote(id, content));
   ipcMain.handle('delete-note', (_e, id) => db.deleteNote(id));
   ipcMain.handle('restore-note', (_e, note) => db.restoreNote(note));
+  ipcMain.handle('create-folder',       (_e, name, description) => db.createFolder(name, description));
+  ipcMain.handle('update-folder',       (_e, id, name, description) => db.updateFolder(id, name, description));
+  ipcMain.handle('get-folders',         ()                     => db.getAllFolders());
+  ipcMain.handle('update-note-folder',  (_e, noteId, folderId) => db.updateNoteFolder(noteId, folderId));
+  ipcMain.handle('get-notes-by-folder', (_e, folderId)         => db.getNotesByFolder(folderId));
   ipcMain.handle('resize-window', (_e, panelOpen) => {
     if (!win) return;
     const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize;

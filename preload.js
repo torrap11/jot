@@ -7,5 +7,10 @@ contextBridge.exposeInMainWorld('api', {
   updateNote: (id, content) => ipcRenderer.invoke('update-note', id, content),
   deleteNote: (id) => ipcRenderer.invoke('delete-note', id),
   restoreNote: (note) => ipcRenderer.invoke('restore-note', note),
-  resizeWindow: (panelOpen) => ipcRenderer.invoke('resize-window', panelOpen),
+  resizeWindow:     (panelOpen)           => ipcRenderer.invoke('resize-window', panelOpen),
+  createFolder:     (name, description)  => ipcRenderer.invoke('create-folder', name, description),
+  updateFolder:     (id, name, description) => ipcRenderer.invoke('update-folder', id, name, description),
+  getFolders:       ()                   => ipcRenderer.invoke('get-folders'),
+  updateNoteFolder: (noteId, folderId)   => ipcRenderer.invoke('update-note-folder', noteId, folderId),
+  getNotesByFolder: (folderId)           => ipcRenderer.invoke('get-notes-by-folder', folderId),
 });

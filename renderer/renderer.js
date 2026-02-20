@@ -10,6 +10,16 @@ const agentPanel = document.getElementById('agent-panel');
 const agentMessages = document.getElementById('agent-messages');
 const agentInput = document.getElementById('agent-input');
 const agentSendBtn = document.getElementById('agent-send-btn');
+const folderBar = document.getElementById('folder-bar');
+const newFolderBtn = document.getElementById('new-folder-btn');
+const newFolderInput = document.getElementById('new-folder-input');
+const folderMove = document.getElementById('folder-move');
+const folderBtn = document.getElementById('folder-btn');
+const folderOrganizeView = document.getElementById('folder-organize-view');
+const folderOrganizeContent = document.getElementById('folder-organize-content');
+const folderOrganizeNewInput = document.getElementById('folder-organize-new-input');
+const folderOrganizeDescInput = document.getElementById('folder-organize-desc-input');
+const folderOrganizeNewBtn = document.getElementById('folder-organize-new-btn');
 
 function isImageNote(note) {
   return note && note.content && note.content.startsWith('data:image/');
@@ -21,9 +31,14 @@ let notes = [];
 let selectedIndex = 0;
 let deletedNotesStack = [];
 let agentPanelOpen = false;
+let folders = [];
+let currentFolderFilter = 'all'; // 'all' | null (unfiled) | number (folder id)
+let folderOrganizeOpen = false;
 
 async function loadNotes(selectNoteId = null) {
-  notes = await window.api.getNotes();
+  notes = currentFolderFilter === 'all'
+    ? await window.api.getNotes()
+    : await window.api.getNotesByFolder(currentFolderFilter);
   noteList.innerHTML = '';
 
   if (notes.length === 0) {
@@ -116,6 +131,7 @@ function openNote(note) {
   if (!isImageNote(note)) {
     requestAnimationFrame(() => contentEl.focus());
   }
+  updateFolderMoveSelector();
 }
 
 async function showList() {
@@ -254,6 +270,47 @@ document.addEventListener('keydown', async (e) => {
     return;
   }
 
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (folderOrganizeOpen) {
+      closeFolderOrganizeView();
+    } else if (currentNote) {
+      showList();
+    }
+    return;
+  }
+
+  if (e.ctrlKey && e.key === 'Tab') {
+    e.preventDefault();
+    const filterList = ['all', null, ...folders.map((f) => f.id)];
+    const idx = filterList.findIndex(
+      (f) =>
+        (f === 'all' && currentFolderFilter === 'all') ||
+        (f === null && currentFolderFilter === null) ||
+        (typeof f === 'number' && currentFolderFilter === f)
+    );
+    if (idx < 0) return;
+    const nextIdx = e.shiftKey
+      ? (idx - 1 + filterList.length) % filterList.length
+      : (idx + 1) % filterList.length;
+    currentFolderFilter = filterList[nextIdx];
+    renderFolderBar();
+    if (folderOrganizeOpen) {
+      renderFolderOrganizeJots();
+    } else if (currentNote) {
+      showList();
+    } else {
+      loadNotes();
+    }
+    return;
+  }
+
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (currentNote) showList();
+    return;
+  }
+
   if (!e.metaKey) return;
 
   if (e.key === 'n') {
@@ -267,12 +324,13 @@ document.addEventListener('keydown', async (e) => {
   } else if (e.key === 's') {
     e.preventDefault();
     autoSave();
-  } else if (e.key === 'e') {
-    e.preventDefault();
-    if (currentNote) showList();
   } else if (e.key === 'j') {
     e.preventDefault();
     toggleAgentPanel();
+  } else if (e.key === 'f') {
+    e.preventDefault();
+    if (folderOrganizeOpen) closeFolderOrganizeView();
+    else openFolderOrganizeView();
   }
 });
 
@@ -307,4 +365,202 @@ agentInput.addEventListener('keydown', (e) => {
   }
 });
 
+// ── Folder functions ──
+
+function renderFolderBar() {
+  folderBar.querySelectorAll('.folder-pill-dynamic').forEach(el => el.remove());
+
+  if (folders.length === 0 && !folderOrganizeOpen) {
+    folderBar.classList.add('hidden');
+    return;
+  }
+  folderBar.classList.remove('hidden');
+
+  folders.forEach(folder => {
+    const btn = document.createElement('button');
+    btn.className = 'folder-pill folder-pill-dynamic';
+    btn.dataset.folder = folder.id;
+    btn.textContent = folder.name;
+    folderBar.insertBefore(btn, newFolderBtn);
+  });
+
+  folderBar.querySelectorAll('.folder-pill').forEach(btn => {
+    const val = btn.dataset.folder;
+    const isActive =
+      (val === 'all'     && currentFolderFilter === 'all') ||
+      (val === 'unfiled' && currentFolderFilter === null)  ||
+      (Number(val)       === currentFolderFilter);
+    btn.classList.toggle('active', isActive);
+  });
+}
+
+async function loadFolders() {
+  folders = await window.api.getFolders();
+  renderFolderBar();
+  updateFolderMoveSelector();
+}
+
+function updateFolderMoveSelector() {
+  if (folders.length === 0) {
+    folderMove.classList.add('hidden');
+    return;
+  }
+  folderMove.classList.remove('hidden');
+  folderMove.innerHTML = '<option value="">Unfiled</option>';
+  folders.forEach(f => {
+    const opt = document.createElement('option');
+    opt.value = f.id;
+    opt.textContent = f.name;
+    folderMove.appendChild(opt);
+  });
+  folderMove.value = currentNote?.folder_id ?? '';
+}
+
+folderMove.addEventListener('change', async () => {
+  if (!currentNote) return;
+  const folderId = folderMove.value === '' ? null : Number(folderMove.value);
+  await window.api.updateNoteFolder(currentNote.id, folderId);
+  currentNote.folder_id = folderId;
+});
+
+folderBar.addEventListener('click', async (e) => {
+  const pill = e.target.closest('.folder-pill:not(.folder-pill-add)');
+  if (!pill) return;
+  const val = pill.dataset.folder;
+  currentFolderFilter = val === 'all' ? 'all' : val === 'unfiled' ? null : Number(val);
+  renderFolderBar();
+  if (folderOrganizeOpen) {
+    await renderFolderOrganizeJots();
+  } else {
+    await loadNotes();
+  }
+});
+
+newFolderBtn.addEventListener('click', () => {
+  newFolderBtn.classList.add('hidden');
+  newFolderInput.classList.remove('hidden');
+  newFolderInput.value = '';
+  newFolderInput.focus();
+});
+
+async function confirmNewFolder() {
+  const name = newFolderInput.value.trim();
+  newFolderInput.classList.add('hidden');
+  newFolderBtn.classList.remove('hidden');
+  if (!name) return;
+  await window.api.createFolder(name);
+  await loadFolders();
+}
+
+newFolderInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter')  { e.preventDefault(); confirmNewFolder(); }
+  if (e.key === 'Escape') { e.preventDefault(); newFolderInput.classList.add('hidden'); newFolderBtn.classList.remove('hidden'); }
+});
+newFolderInput.addEventListener('blur', confirmNewFolder);
+
+// ── Folder organize view ──
+
+async function openFolderOrganizeView() {
+  folderOrganizeOpen = true;
+  noteList.classList.add('hidden');
+  editor.classList.add('hidden');
+  folderOrganizeView.classList.remove('hidden');
+  await loadFolders();
+  renderFolderBar();
+  await renderFolderOrganizeJots();
+}
+
+function closeFolderOrganizeView() {
+  folderOrganizeOpen = false;
+  folderOrganizeView.classList.add('hidden');
+  noteList.classList.remove('hidden');
+  if (folders.length > 0) folderBar.classList.remove('hidden');
+  else folderBar.classList.add('hidden');
+  loadNotes();
+}
+
+async function renderFolderOrganizeJots() {
+  const folderNotes = currentFolderFilter === 'all'
+    ? await window.api.getNotes()
+    : await window.api.getNotesByFolder(currentFolderFilter);
+
+  folderOrganizeContent.innerHTML = '';
+  selectedIndex = Math.min(selectedIndex, Math.max(0, folderNotes.length - 1));
+
+  if (folderNotes.length === 0) {
+    folderOrganizeContent.innerHTML = '<div class="empty-state">No jots in this folder</div>';
+    return;
+  }
+
+  folderNotes.forEach((note, index) => {
+    const div = document.createElement('div');
+    div.className = 'note-item' + (index === selectedIndex ? ' selected' : '');
+    div.dataset.index = index;
+
+    const date = new Date(note.updated_at + 'Z').toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    if (isImageNote(note)) {
+      div.innerHTML = `
+        <div class="note-preview note-preview-image">
+          <img src="${note.content}" alt="Image" />
+        </div>
+        <div class="note-date">${date}</div>
+      `;
+    } else {
+      const preview = note.content.trim() || 'Empty note';
+      const firstLine = preview.split('\n')[0].substring(0, 50);
+      div.innerHTML = `
+        <div class="note-preview">${escapeHtml(firstLine)}</div>
+        <div class="note-date">${date}</div>
+      `;
+    }
+
+    div.addEventListener('click', () => {
+      selectedIndex = index;
+      openNote(note);
+    });
+    folderOrganizeContent.appendChild(div);
+  });
+}
+
+folderBtn.addEventListener('click', () => {
+  if (folderOrganizeOpen) {
+    closeFolderOrganizeView();
+  } else {
+    openFolderOrganizeView();
+  }
+});
+
+folderOrganizeNewBtn.addEventListener('click', async () => {
+  const name = folderOrganizeNewInput.value.trim();
+  if (!name) return;
+  const description = folderOrganizeDescInput.value.trim();
+  folderOrganizeNewInput.value = '';
+  folderOrganizeDescInput.value = '';
+  await window.api.createFolder(name, description);
+  await loadFolders();
+  renderFolderBar();
+  await renderFolderOrganizeJots();
+});
+
+folderOrganizeNewInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    folderOrganizeNewBtn.click();
+  }
+});
+
+folderOrganizeDescInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    folderOrganizeNewBtn.click();
+  }
+});
+
+loadFolders();
 loadNotes();
