@@ -16,6 +16,7 @@ const newFolderInput = document.getElementById('new-folder-input');
 const folderMove = document.getElementById('folder-move');
 const folderBtn = document.getElementById('folder-btn');
 const folderOrganizeView = document.getElementById('folder-organize-view');
+const folderOrganizeFilter = document.getElementById('folder-organize-filter');
 const folderOrganizeContent = document.getElementById('folder-organize-content');
 const folderOrganizeNewInput = document.getElementById('folder-organize-new-input');
 const folderOrganizeDescInput = document.getElementById('folder-organize-desc-input');
@@ -272,7 +273,9 @@ document.addEventListener('keydown', async (e) => {
 
   if (e.key === 'Escape') {
     e.preventDefault();
-    if (folderOrganizeOpen) {
+    if (agentPanelOpen) {
+      toggleAgentPanel();
+    } else if (folderOrganizeOpen) {
       closeFolderOrganizeView();
     } else if (currentNote) {
       showList();
@@ -302,12 +305,6 @@ document.addEventListener('keydown', async (e) => {
     } else {
       loadNotes();
     }
-    return;
-  }
-
-  if (e.key === 'Escape') {
-    e.preventDefault();
-    if (currentNote) showList();
     return;
   }
 
@@ -341,19 +338,139 @@ function toggleAgentPanel() {
   if (agentPanelOpen) agentInput.focus();
 }
 
-function sendAgentMessage() {
+function saveAgentChat() {
+  sessionStorage.setItem('jot-agent-chat', agentMessages.innerHTML);
+}
+
+function restoreAgentChat() {
+  const saved = sessionStorage.getItem('jot-agent-chat');
+  if (saved) agentMessages.innerHTML = saved;
+}
+
+async function sendAgentMessage() {
   const text = agentInput.value.trim();
   if (!text) return;
 
+  // Disable input during request to prevent double-submit
+  agentInput.disabled = true;
+  agentSendBtn.disabled = true;
+
+  // Remove empty state
   const emptyState = agentMessages.querySelector('.agent-empty-state');
   if (emptyState) emptyState.remove();
 
-  const msg = document.createElement('div');
-  msg.className = 'agent-message user';
-  msg.textContent = text;
-  agentMessages.appendChild(msg);
-  agentMessages.scrollTop = agentMessages.scrollHeight;
+  // Append user bubble and clear input immediately
+  const userMsg = document.createElement('div');
+  userMsg.className = 'agent-message user';
+  userMsg.textContent = text;
+  agentMessages.appendChild(userMsg);
   agentInput.value = '';
+  agentMessages.scrollTop = agentMessages.scrollHeight;
+
+  // Show loading indicator — will be mutated into result/error bubble
+  const replyMsg = document.createElement('div');
+  replyMsg.className = 'agent-message loading';
+  replyMsg.textContent = 'Thinking…';
+  agentMessages.appendChild(replyMsg);
+  agentMessages.scrollTop = agentMessages.scrollHeight;
+
+  try {
+    // Notes context: use current filter state; fall back to all notes if list is empty
+    const notesContext = notes.length > 0 ? notes : await window.api.getNotes();
+
+    // Step 1: LLM → structured action array
+    const { actions, error: llmError } = await window.api.intelligenceQueryStructured(text, notesContext);
+
+    if (llmError) {
+      replyMsg.className = 'agent-message error';
+      replyMsg.textContent = llmError;
+      return;
+    }
+
+    // Step 2: execute actions
+    const execResult = await window.api.intelligenceExecute(actions);
+
+    // Debug: log to console
+    console.log('[Jotty Agent] Actions:', actions);
+    console.log('[Jotty Agent] Result:', execResult);
+
+    // Step 3: refresh UI
+    await loadNotes();
+    await loadFolders();
+
+    // Step 4: show summary + actions debug
+    replyMsg.className = 'agent-message assistant';
+    replyMsg.innerHTML = '';
+    const summaryEl = document.createElement('div');
+    summaryEl.className = 'agent-summary';
+    summaryEl.textContent = buildActionSummary(actions, execResult);
+    replyMsg.appendChild(summaryEl);
+    const debugEl = document.createElement('div');
+    debugEl.className = 'agent-actions-debug';
+    debugEl.textContent = formatActionsDebug(actions);
+    replyMsg.appendChild(debugEl);
+
+  } catch (err) {
+    replyMsg.className = 'agent-message error';
+    replyMsg.textContent = err.message || 'Something went wrong.';
+  } finally {
+    agentInput.disabled = false;
+    agentSendBtn.disabled = false;
+    agentMessages.scrollTop = agentMessages.scrollHeight;
+    agentInput.focus();
+    saveAgentChat();
+  }
+}
+
+function buildActionSummary(actions, execResult) {
+  if (!execResult.success && execResult.results.length === 0) {
+    return `Error: ${execResult.errors.map(e => e.error).join('; ')}`;
+  }
+
+  let noteCount = 0, folderCount = 0, movedCount = 0, searchCount = 0, searchRan = false, organizeGroups = 0;
+
+  for (const r of execResult.results) {
+    switch (r.type) {
+      case 'create_note':          noteCount++; break;
+      case 'create_folder':        folderCount++; break;
+      case 'move_note_to_folder':  movedCount++; break;
+      case 'search':               searchRan = true; searchCount += r.result?.count ?? 0; break;
+      case 'organize_into_folders':
+        organizeGroups += Array.isArray(r.result) ? r.result.length : 1;
+        movedCount += (r.result || []).reduce((s, g) => s + (g.movedNoteIds?.length || 0), 0);
+        break;
+    }
+  }
+
+  const parts = [];
+  if (noteCount)       parts.push(`Created ${noteCount} note${noteCount > 1 ? 's' : ''}`);
+  if (folderCount)     parts.push(`Created ${folderCount} folder${folderCount > 1 ? 's' : ''}`);
+  if (organizeGroups)  parts.push(`Organized into ${organizeGroups} folder${organizeGroups > 1 ? 's' : ''}`);
+  else if (movedCount) parts.push(`Moved ${movedCount} note${movedCount > 1 ? 's' : ''}`);
+  if (searchRan)       parts.push(`Found ${searchCount} matching note${searchCount !== 1 ? 's' : ''}`);
+  if (execResult.errors.length > 0) {
+    parts.push(`${execResult.errors.length} action${execResult.errors.length > 1 ? 's' : ''} failed`);
+  }
+
+  if (parts.length > 0) return `Done: ${parts.join(', ')}.`;
+  // Fallback: list action types when no counts apply
+  const types = execResult.results.map(r => r.type).filter(Boolean);
+  return types.length > 0 ? `Done: ran ${types.join(', ')}.` : 'Done.';
+}
+
+function formatActionsDebug(actions) {
+  if (!actions || actions.length === 0) return '';
+  return 'Actions: ' + actions.map(a => {
+    const p = a.payload;
+    switch (a.type) {
+      case 'search':               return `search("${(p?.query || '').slice(0, 30)}")`;
+      case 'create_note':          return `create_note(${(p?.content || '').slice(0, 40)}…)`;
+      case 'create_folder':        return `create_folder("${p?.name || ''}")`;
+      case 'move_note_to_folder':  return `move_note(${p?.noteId} → ${p?.folderId})`;
+      case 'organize_into_folders': return `organize(${Array.isArray(p) ? p.length : 0} folders)`;
+      default:                     return a.type;
+    }
+  }).join(', ');
 }
 
 agentSendBtn.addEventListener('click', sendAgentMessage);
@@ -468,13 +585,41 @@ newFolderInput.addEventListener('blur', confirmNewFolder);
 
 // ── Folder organize view ──
 
+function renderFolderOrganizeFilter() {
+  folderOrganizeFilter.innerHTML = '';
+  const filters = [
+    { val: 'all', label: 'All' },
+    { val: 'unfiled', label: 'Unfiled' },
+    ...folders.map(f => ({ val: String(f.id), label: f.name })),
+  ];
+  filters.forEach(({ val, label }) => {
+    const btn = document.createElement('button');
+    btn.className = 'folder-pill folder-organize-filter-pill';
+    btn.dataset.folder = val;
+    btn.textContent = label;
+    const isActive =
+      (val === 'all'     && currentFolderFilter === 'all') ||
+      (val === 'unfiled' && currentFolderFilter === null)  ||
+      (Number(val)       === currentFolderFilter);
+    btn.classList.toggle('active', isActive);
+    btn.addEventListener('click', async () => {
+      currentFolderFilter = val === 'all' ? 'all' : val === 'unfiled' ? null : Number(val);
+      renderFolderOrganizeFilter();
+      await renderFolderOrganizeJots();
+    });
+    folderOrganizeFilter.appendChild(btn);
+  });
+}
+
 async function openFolderOrganizeView() {
   folderOrganizeOpen = true;
   noteList.classList.add('hidden');
+  noteList.style.display = 'none';
+  folderBar.classList.add('hidden');
   editor.classList.add('hidden');
   folderOrganizeView.classList.remove('hidden');
   await loadFolders();
-  renderFolderBar();
+  renderFolderOrganizeFilter();
   await renderFolderOrganizeJots();
 }
 
@@ -482,6 +627,7 @@ function closeFolderOrganizeView() {
   folderOrganizeOpen = false;
   folderOrganizeView.classList.add('hidden');
   noteList.classList.remove('hidden');
+  noteList.style.display = '';
   if (folders.length > 0) folderBar.classList.remove('hidden');
   else folderBar.classList.add('hidden');
   loadNotes();
@@ -552,7 +698,8 @@ folderOrganizeNewBtn.addEventListener('click', async () => {
   folderOrganizeDescInput.value = '';
   await window.api.createFolder(name, description);
   await loadFolders();
-  renderFolderBar();
+  if (folderOrganizeOpen) renderFolderOrganizeFilter();
+  else renderFolderBar();
   await renderFolderOrganizeJots();
 });
 
@@ -570,5 +717,6 @@ folderOrganizeDescInput.addEventListener('keydown', (e) => {
   }
 });
 
+restoreAgentChat();
 loadFolders();
 loadNotes();

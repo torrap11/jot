@@ -32,6 +32,79 @@ function getConfig() {
   };
 }
 
+const STRUCTURED_SYSTEM_PROMPT = `You are an action-planning assistant for a sticky-note app.
+Given the user's instruction and their notes, respond with ONLY a valid JSON array of action objects.
+
+Available action types:
+  {"type":"search",               "payload":{"query":"<search term>"}}
+  {"type":"create_note",          "payload":{"content":"<note text>"}}
+  {"type":"create_folder",        "payload":{"name":"<folder name>"}}
+  {"type":"move_note_to_folder",  "payload":{"noteId":<id>,"folderId":<id>}}
+  {"type":"organize_into_folders","payload":[{"folderName":"<name>","noteIds":[<id>,...]}]}
+
+Rules:
+- Return ONLY the JSON array — no prose, no markdown fences, no explanation.
+- Use only the note IDs provided in the context.
+- For organize_into_folders you may create new folder names if appropriate.
+- If the request is purely informational with no actions, return [{"type":"search","payload":{"query":"<rephrased query>"}}].`;
+
+function tryParseJsonArray(str) {
+  try {
+    const v = JSON.parse(str);
+    if (Array.isArray(v) && v.length >= 0) return v;
+  } catch (_) {}
+  return null;
+}
+
+function fixCommonJsonIssues(str) {
+  return str.replace(/,(\s*[}\]])/g, '$1');  // trailing commas
+}
+
+function extractJsonArray(raw) {
+  let trimmed = raw.trim();
+
+  // Strip common LLM prefixes
+  const prefixes = [
+    /^here (?:is|are) (?:the )?(?:json|actions?)(?:\s*:)?\s*/i,
+    /^the (?:json|actions?)(?:\s*:)?\s*/i,
+    /^```(?:json)?\s*/i,
+    /^sure[.!]?\s*/i,
+    /^certainly[.!]?\s*/i,
+  ];
+  for (const re of prefixes) {
+    trimmed = trimmed.replace(re, '').trim();
+  }
+  trimmed = trimmed.replace(/\s*```\s*$/g, '').trim();
+
+  // Direct parse
+  let v = tryParseJsonArray(trimmed);
+  if (v) return v;
+
+  // Code-fence extraction
+  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) {
+    v = tryParseJsonArray(fence[1].trim());
+    if (v) return v;
+    v = tryParseJsonArray(fixCommonJsonIssues(fence[1].trim()));
+    if (v) return v;
+  }
+
+  // Find array literal — match balanced brackets
+  const arrMatch = trimmed.match(/\[[\s\S]*\]/);
+  if (arrMatch) {
+    v = tryParseJsonArray(arrMatch[0]);
+    if (v) return v;
+    v = tryParseJsonArray(fixCommonJsonIssues(arrMatch[0]));
+    if (v) return v;
+  }
+
+  // Last resort: try fixing the whole string
+  v = tryParseJsonArray(fixCommonJsonIssues(trimmed));
+  if (v) return v;
+
+  throw new Error('LLM response did not contain a valid JSON array of actions.');
+}
+
 /**
  * Call the LLM with a system prompt, user message, and optional notes context.
  * @param {string} systemPrompt
@@ -46,19 +119,20 @@ async function callLLM(systemPrompt, userMessage, notesContext = []) {
 
   if (!useOllama && !apiKey) {
     throw new Error(
-      'No API key configured. Set JOT_OPENAI_API_KEY, or use Ollama: add {"useOllama": true} to ' +
-      path.join(app.getPath('userData'), 'config.json') + ' and run `ollama pull llama3.2`.'
+      'Set JOT_OPENAI_API_KEY or add openaiApiKey to config.json to use Jotty Agent. ' +
+      'Or use Ollama: add {"useOllama": true} to config.json and run `ollama pull llama3.2`.'
     );
   }
 
   const client = new OpenAI({ apiKey: apiKey || 'ollama', ...(baseURL ? { baseURL } : {}) });
 
-  // Build notes context — skip image notes (base64 data URLs)
-  const textNotes = notesContext.filter(n => !n.content.startsWith('data:image/'));
+  // Build notes context — image notes become placeholders so LLM knows they exist
   let fullUserMessage = userMessage;
-  if (textNotes.length > 0) {
-    const notesBlock = textNotes
-      .map(n => `[Note ${n.id}]\n${n.content.substring(0, 500)}`)
+  if (notesContext.length > 0) {
+    const notesBlock = notesContext
+      .map(n => n.content.startsWith('data:image/')
+        ? `[Note ${n.id}]\n(image note)`
+        : `[Note ${n.id}]\n${n.content.substring(0, 500)}`)
       .join('\n\n---\n\n');
     fullUserMessage = `${userMessage}\n\n===\nJots:\n\n${notesBlock}`;
   }
@@ -74,4 +148,53 @@ async function callLLM(systemPrompt, userMessage, notesContext = []) {
   return completion.choices[0].message.content;
 }
 
-module.exports = { callLLM };
+/**
+ * Call the LLM requesting a JSON array of actions.
+ * @param {string} userMessage
+ * @param {Array<{id: number, content: string}>} notesContext
+ * @returns {Promise<Array<{type: string, payload: any}>>}
+ * @throws {Error} on API failure or invalid JSON
+ */
+async function callLLMWithStructuredOutput(userMessage, notesContext = []) {
+  const { apiKey, model, baseURL } = getConfig();
+  const useOllama = baseURL && baseURL.includes('11434');
+
+  if (!useOllama && !apiKey) {
+    throw new Error(
+      'Set JOT_OPENAI_API_KEY or add openaiApiKey to config.json to use Jotty Agent. ' +
+      'Or use Ollama: add {"useOllama": true} to config.json.'
+    );
+  }
+
+  const client = new OpenAI({ apiKey: apiKey || 'ollama', ...(baseURL ? { baseURL } : {}) });
+
+  // Build notes context — image notes become placeholders so LLM knows they exist
+  let fullUserMessage = userMessage;
+  if (notesContext.length > 0) {
+    const notesBlock = notesContext
+      .map(n => n.content.startsWith('data:image/')
+        ? `[Note ${n.id}]\n(image note)`
+        : `[Note ${n.id}]\n${n.content.substring(0, 500)}`)
+      .join('\n\n---\n\n');
+    fullUserMessage = `${userMessage}\n\n===\nJots:\n\n${notesBlock}`;
+  }
+
+  const completion = await client.chat.completions.create({
+    model,
+    messages: [
+      { role: 'system', content: STRUCTURED_SYSTEM_PROMPT },
+      { role: 'user',   content: fullUserMessage },
+    ],
+  });
+
+  const raw = completion.choices[0].message.content;
+  try {
+    return extractJsonArray(raw);
+  } catch (_) {
+    // Fallback: LLM returned prose or malformed JSON — treat as search
+    const query = userMessage.slice(0, 80).replace(/"/g, '').trim() || 'notes';
+    return [{ type: 'search', payload: { query } }];
+  }
+}
+
+module.exports = { callLLM, callLLMWithStructuredOutput };

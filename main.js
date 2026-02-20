@@ -50,6 +50,7 @@ function toggleWindow() {
 app.whenReady().then(() => {
   const db = require('./database');
   const llm = require('./llm');
+  const executor = require('./intelligence/executor');
 
   createWindow();
 
@@ -74,6 +75,19 @@ app.whenReady().then(() => {
     try {
       const response = await llm.callLLM(AGENT_SYSTEM_PROMPT, userMessage, notes);
       return { response };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('intelligence-execute', async (_e, actions) => {
+    return executor.executeActions(actions, db);
+  });
+
+  ipcMain.handle('intelligence-query-structured', async (_e, { userMessage, notes }) => {
+    try {
+      const actions = await llm.callLLMWithStructuredOutput(userMessage, notes);
+      return { actions };
     } catch (err) {
       return { error: err.message };
     }

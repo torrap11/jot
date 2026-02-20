@@ -13,5 +13,7 @@ contextBridge.exposeInMainWorld('api', {
   getFolders:       ()                   => ipcRenderer.invoke('get-folders'),
   updateNoteFolder: (noteId, folderId)   => ipcRenderer.invoke('update-note-folder', noteId, folderId),
   getNotesByFolder:   (folderId)           => ipcRenderer.invoke('get-notes-by-folder', folderId),
-  intelligenceQuery:  (userMessage, notes) => ipcRenderer.invoke('intelligence-query', { userMessage, notes }),
+  intelligenceQuery:           (userMessage, notes) => ipcRenderer.invoke('intelligence-query', { userMessage, notes }),
+  intelligenceQueryStructured: (userMessage, notes) => ipcRenderer.invoke('intelligence-query-structured', { userMessage, notes }),
+  intelligenceExecute:         (actions)            => ipcRenderer.invoke('intelligence-execute', actions),
 });
