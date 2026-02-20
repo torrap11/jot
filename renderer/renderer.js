@@ -136,12 +136,13 @@ function openNote(note) {
 }
 
 async function showList() {
-  const noteIdToSelect = currentNote?.id ?? null;
+  let noteIdToSelect = currentNote?.id ?? null;
   if (currentNote) {
     if (isImageNote(currentNote)) {
       // Image notes have no editable content, nothing to save
     } else if (contentEl.value.trim() === '') {
       await window.api.deleteNote(currentNote.id);
+      noteIdToSelect = null; // Don't try to select deleted note
     } else {
       autoSave();
     }
@@ -245,7 +246,7 @@ document.addEventListener('keydown', async (e) => {
       openNote(notes[selectedIndex]);
       return;
     }
-    if (e.metaKey && e.key === 'd') {
+    if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
       const note = notes[selectedIndex];
       deletedNotesStack.push({ ...note });
@@ -278,7 +279,7 @@ document.addEventListener('keydown', async (e) => {
     } else if (folderOrganizeOpen) {
       closeFolderOrganizeView();
     } else if (currentNote) {
-      showList();
+      await showList();
     }
     return;
   }
@@ -308,6 +309,25 @@ document.addEventListener('keydown', async (e) => {
     return;
   }
 
+  if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+    e.preventDefault();
+    autoSave();
+    if (currentNote) {
+      folderMove.classList.remove('hidden');
+      folderMove.focus();
+      if (typeof folderMove.showPicker === 'function') {
+        try {
+          folderMove.showPicker();
+        } catch (_) {
+          folderMove.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+        }
+      } else {
+        folderMove.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+      }
+    }
+    return;
+  }
+
   if (!e.metaKey) return;
 
   if (e.key === 'n') {
@@ -318,9 +338,6 @@ document.addEventListener('keydown', async (e) => {
     e.preventDefault();
     const note = await window.api.createNoteFromImage();
     if (note) openNote(note);
-  } else if (e.key === 's') {
-    e.preventDefault();
-    autoSave();
   } else if (e.key === 'j') {
     e.preventDefault();
     toggleAgentPanel();
@@ -339,11 +356,11 @@ function toggleAgentPanel() {
 }
 
 function saveAgentChat() {
-  sessionStorage.setItem('jot-agent-chat', agentMessages.innerHTML);
+  sessionStorage.setItem('easy-jot-agent-chat', agentMessages.innerHTML);
 }
 
 function restoreAgentChat() {
-  const saved = sessionStorage.getItem('jot-agent-chat');
+  const saved = sessionStorage.getItem('easy-jot-agent-chat');
   if (saved) agentMessages.innerHTML = saved;
 }
 
@@ -391,8 +408,8 @@ async function sendAgentMessage() {
     const execResult = await window.api.intelligenceExecute(actions);
 
     // Debug: log to console
-    console.log('[Jotty Agent] Actions:', actions);
-    console.log('[Jotty Agent] Result:', execResult);
+    console.log('[Easy Jot Agent] Actions:', actions);
+    console.log('[Easy Jot Agent] Result:', execResult);
 
     // Step 3: refresh UI
     await loadNotes();
@@ -499,7 +516,11 @@ function renderFolderBar() {
     folderBar.classList.add('hidden');
     return;
   }
-  folderBar.classList.remove('hidden');
+  if (folderOrganizeOpen) {
+    folderBar.classList.add('hidden');
+  } else {
+    folderBar.classList.remove('hidden');
+  }
 
   folders.forEach(folder => {
     const btn = document.createElement('button');

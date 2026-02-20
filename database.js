@@ -6,7 +6,7 @@ let db;
 
 function getDb() {
   if (db) return db;
-  const dbPath = path.join(app.getPath('userData'), 'jot.db');
+  const dbPath = path.join(app.getPath('userData'), 'easy-jot.db');
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.exec(`

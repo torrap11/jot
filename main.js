@@ -67,7 +67,7 @@ app.whenReady().then(() => {
   ipcMain.handle('update-note-folder',  (_e, noteId, folderId) => db.updateNoteFolder(noteId, folderId));
   ipcMain.handle('get-notes-by-folder', (_e, folderId)         => db.getNotesByFolder(folderId));
   const AGENT_SYSTEM_PROMPT =
-    'You are Jotty Agent, an AI assistant embedded in a sticky-note app. ' +
+    'You are Easy Jot Agent, an AI assistant embedded in a sticky-note app. ' +
     'Help the user understand, search, and act on their notes. ' +
     'Be concise and actionable. When referencing a note, use [Note ID] format.';
 

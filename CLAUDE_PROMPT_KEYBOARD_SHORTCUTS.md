@@ -1,19 +1,19 @@
-# One-Shot Prompt: Add Keyboard Shortcuts to Jot
+# One-Shot Prompt: Add Keyboard Shortcuts to Easy Jot
 
 Use this prompt with Claude Code to add the keyboard shortcuts in one shot:
 
 ---
 
-**Add the following keyboard shortcuts to the Jot sticky-note app:**
+**Add the following keyboard shortcuts to the Easy Jot sticky-note app:**
 
-1. **Command+N** — Opens a new jot (same behavior as clicking the "+" button: create a new note and open the editor).
+1. **Command+N** — Opens a new note (same behavior as clicking the "+" button: create a new note and open the editor).
 
-2. **Command+S** — Manually saves the current jot (persist the current note's content to the database; same as the existing `autoSave` logic but triggered explicitly).
+2. **Command+S** — Manually saves the current note (persist the current note's content to the database; same as the existing `autoSave` logic but triggered explicitly).
 
-3. **Command+E** — Exits the current jot (same behavior as clicking "Back": save if needed, close the editor, return to the note list).
+3. **Command+E** — Exits the current note (same behavior as clicking "Back": save if needed, close the editor, return to the note list).
 
 **Implementation requirements:**
-- Register these shortcuts in the renderer process (they apply when the Jot window is focused).
+- Register these shortcuts in the renderer process (they apply when the Easy Jot window is focused).
 - Use `keydown` on `document` or `window`; check for `event.metaKey` (Command on macOS).
 - Call `event.preventDefault()` for Command+N and Command+S to avoid browser/Electron defaults.
 - Wire each shortcut to the existing functions in `renderer/renderer.js`:

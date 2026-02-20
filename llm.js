@@ -6,8 +6,8 @@ const { app } = require('electron');
 const OLLAMA_BASE = 'http://localhost:11434/v1';
 
 function getConfig() {
-  const envKey = process.env.JOT_OPENAI_API_KEY;
-  const useOllamaEnv = process.env.JOT_USE_OLLAMA === '1' || process.env.JOT_USE_OLLAMA === 'true';
+  const envKey = process.env.EASY_JOT_OPENAI_API_KEY;
+  const useOllamaEnv = process.env.EASY_JOT_USE_OLLAMA === '1' || process.env.EASY_JOT_USE_OLLAMA === 'true';
 
   let fileConfig = {};
   try {
@@ -119,7 +119,7 @@ async function callLLM(systemPrompt, userMessage, notesContext = []) {
 
   if (!useOllama && !apiKey) {
     throw new Error(
-      'Set JOT_OPENAI_API_KEY or add openaiApiKey to config.json to use Jotty Agent. ' +
+      'Set EASY_JOT_OPENAI_API_KEY or add openaiApiKey to config.json to use Easy Jot Agent. ' +
       'Or use Ollama: add {"useOllama": true} to config.json and run `ollama pull llama3.2`.'
     );
   }
@@ -161,7 +161,7 @@ async function callLLMWithStructuredOutput(userMessage, notesContext = []) {
 
   if (!useOllama && !apiKey) {
     throw new Error(
-      'Set JOT_OPENAI_API_KEY or add openaiApiKey to config.json to use Jotty Agent. ' +
+      'Set EASY_JOT_OPENAI_API_KEY or add openaiApiKey to config.json to use Easy Jot Agent. ' +
       'Or use Ollama: add {"useOllama": true} to config.json.'
     );
   }

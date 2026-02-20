@@ -1,4 +1,4 @@
-# Jot
+# Easy Jot
 
 A minimal sticky-note desktop app that lives behind a global hotkey.
 
@@ -33,23 +33,25 @@ The app starts hidden in the background (no dock icon).
 
 Notes are stored in a SQLite database at:
 ```
-~/Library/Application Support/jot/jot.db
+~/Library/Application Support/easy-jot/easy-jot.db
 ```
 
-## Jot Agent — API Key Setup
+> **Upgrading from the previous Jot app?** If you had notes in the old app, copy `~/Library/Application Support/jot/jot.db` to `~/Library/Application Support/easy-jot/easy-jot.db` before first run.
 
-The Jot Agent feature uses an OpenAI-compatible LLM. You must supply an API key using **one** of these methods:
+## Easy Jot Agent — API Key Setup
+
+The Easy Jot Agent feature uses an OpenAI-compatible LLM. You must supply an API key using **one** of these methods:
 
 ### Option 1 — Environment variable (recommended)
 
 ```bash
-export JOT_OPENAI_API_KEY=sk-...
+export EASY_JOT_OPENAI_API_KEY=sk-...
 npm start
 ```
 
 ### Option 2 — Config file
 
-Create `~/Library/Application Support/jot/config.json`:
+Create `~/Library/Application Support/easy-jot/config.json`:
 
 ```json
 {
@@ -69,6 +71,6 @@ Create `~/Library/Application Support/jot/config.json`:
 
 | Field | Default | Notes |
 |-------|---------|-------|
-| `openaiApiKey` | — | Required for Jot Agent |
+| `openaiApiKey` | — | Required for Easy Jot Agent |
 | `model` | `gpt-4o-mini` | Any model supported by the endpoint |
 | `baseURL` | OpenAI default | Set to use a compatible provider (e.g. Ollama, local inference servers) |

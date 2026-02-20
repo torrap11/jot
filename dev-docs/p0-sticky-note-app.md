@@ -1,4 +1,4 @@
-# P0: Jot — Sticky Note Desktop App
+# P0: Easy Jot — Sticky Note Desktop App
 
 ## Context
 Build a macOS desktop app triggered by a global hotkey (Ctrl+Opt+Cmd+J) that shows a floating sticky-note window for quick note-taking, backed by SQLite.
@@ -10,7 +10,7 @@ Build a macOS desktop app triggered by a global hotkey (Ctrl+Opt+Cmd+J) that sho
 
 ## Project Structure
 ```
-jot/
+easy-jot/
 ├── package.json
 ├── main.js            # Electron main process (window, shortcuts, IPC)
 ├── preload.js         # Context bridge for DB operations
@@ -29,7 +29,7 @@ jot/
 - Configure `package.json` scripts (`start` → `electron .`)
 
 ### 2. Database layer (`database.js`)
-- Create/open `jot.db` in the app's user data directory
+- Create/open `easy-jot.db` in the app's user data directory
 - Schema: `notes(id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT, created_at TEXT, updated_at TEXT)`
 - Exports: `getAllNotes()`, `createNote(content)`, `updateNote(id, content)`, `deleteNote(id)`
 

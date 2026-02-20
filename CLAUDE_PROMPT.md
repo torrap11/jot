@@ -1,6 +1,6 @@
-# One-Shot Prompt: Sticky Note Desktop App
+# One-Shot Prompt: Easy Jot — Sticky Note Desktop App
 
-Use this prompt with Claude Code to build the application:
+Use this prompt with Claude Code to build the Easy Jot application:
 
 ---
 

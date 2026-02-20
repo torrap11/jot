@@ -1,6 +1,6 @@
 # Project Overview
 
-- **What this project does**: Jot is a minimal sticky-note desktop application. It runs in the background (no dock icon) and is summoned via a global hotkey. Users can create, edit, delete, and restore text notes, as well as create image notes (from file picker or paste). Notes auto-save as the user types.
+- **What this project does**: Easy Jot is a minimal sticky-note desktop application. It runs in the background (no dock icon) and is summoned via a global hotkey. Users can create, edit, delete, and restore text notes, as well as create image notes (from file picker or paste). Notes auto-save as the user types.
 - **Who it is for**: Users who want quick access to jot down thoughts, snippets, or images without leaving their current context. The global hotkey (Control+Option+Command+J) makes it accessible from any app.
 - **Core outcome**: A lightweight, always-available note-taking surface that feels like a digital sticky note—fast to open, minimal UI, persistent storage.
 
@@ -54,7 +54,7 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │  database.js (Main process only)                                 │
 │  - better-sqlite3, single file: ~/Library/Application Support/  │
-│    jot/jot.db                                                    │
+│    easy-jot/easy-jot.db                                          │
 │  - WAL mode, notes table (id, content, created_at, updated_at)   │
 └─────────────────────────────────────────────────────────────────┘
 ```
