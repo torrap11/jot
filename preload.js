@@ -12,5 +12,6 @@ contextBridge.exposeInMainWorld('api', {
   updateFolder:     (id, name, description) => ipcRenderer.invoke('update-folder', id, name, description),
   getFolders:       ()                   => ipcRenderer.invoke('get-folders'),
   updateNoteFolder: (noteId, folderId)   => ipcRenderer.invoke('update-note-folder', noteId, folderId),
-  getNotesByFolder: (folderId)           => ipcRenderer.invoke('get-notes-by-folder', folderId),
+  getNotesByFolder:   (folderId)           => ipcRenderer.invoke('get-notes-by-folder', folderId),
+  intelligenceQuery:  (userMessage, notes) => ipcRenderer.invoke('intelligence-query', { userMessage, notes }),
 });

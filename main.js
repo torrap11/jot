@@ -49,6 +49,7 @@ function toggleWindow() {
 
 app.whenReady().then(() => {
   const db = require('./database');
+  const llm = require('./llm');
 
   createWindow();
 
@@ -64,6 +65,20 @@ app.whenReady().then(() => {
   ipcMain.handle('get-folders',         ()                     => db.getAllFolders());
   ipcMain.handle('update-note-folder',  (_e, noteId, folderId) => db.updateNoteFolder(noteId, folderId));
   ipcMain.handle('get-notes-by-folder', (_e, folderId)         => db.getNotesByFolder(folderId));
+  const AGENT_SYSTEM_PROMPT =
+    'You are Jotty Agent, an AI assistant embedded in a sticky-note app. ' +
+    'Help the user understand, search, and act on their notes. ' +
+    'Be concise and actionable. When referencing a note, use [Note ID] format.';
+
+  ipcMain.handle('intelligence-query', async (_e, { userMessage, notes }) => {
+    try {
+      const response = await llm.callLLM(AGENT_SYSTEM_PROMPT, userMessage, notes);
+      return { response };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
   ipcMain.handle('resize-window', (_e, panelOpen) => {
     if (!win) return;
     const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize;

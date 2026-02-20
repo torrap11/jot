@@ -35,3 +35,40 @@ Notes are stored in a SQLite database at:
 ```
 ~/Library/Application Support/jot/jot.db
 ```
+
+## Jot Agent — API Key Setup
+
+The Jot Agent feature uses an OpenAI-compatible LLM. You must supply an API key using **one** of these methods:
+
+### Option 1 — Environment variable (recommended)
+
+```bash
+export JOT_OPENAI_API_KEY=sk-...
+npm start
+```
+
+### Option 2 — Config file
+
+Create `~/Library/Application Support/jot/config.json`:
+
+```json
+{
+  "openaiApiKey": "sk-..."
+}
+```
+
+### Optional config fields
+
+```json
+{
+  "openaiApiKey": "sk-...",
+  "model": "gpt-4o-mini",
+  "baseURL": "https://api.openai.com/v1"
+}
+```
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `openaiApiKey` | — | Required for Jot Agent |
+| `model` | `gpt-4o-mini` | Any model supported by the endpoint |
+| `baseURL` | OpenAI default | Set to use a compatible provider (e.g. Ollama, local inference servers) |

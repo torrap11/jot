@@ -361,8 +361,16 @@ agentSendBtn.addEventListener('click', sendAgentMessage);
 agentInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
+    e.stopPropagation();
     sendAgentMessage();
   }
+});
+
+// Stop key events in the agent panel from bubbling to the jot editor (fixes Enter inserting into note)
+agentPanel.addEventListener('keydown', (e) => {
+  if (!e.target.closest('#agent-panel')) return;
+  if ((e.metaKey && e.key === 'j') || e.key === 'Escape') return; // allow Cmd+J and Escape to propagate
+  e.stopPropagation();
 });
 
 // ── Folder functions ──
