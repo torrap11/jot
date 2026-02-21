@@ -274,12 +274,12 @@ document.addEventListener('keydown', async (e) => {
 
   if (e.key === 'Escape') {
     e.preventDefault();
-    if (agentPanelOpen) {
-      toggleAgentPanel();
+    if (currentNote) {
+      await showList();
     } else if (folderOrganizeOpen) {
       closeFolderOrganizeView();
-    } else if (currentNote) {
-      await showList();
+    } else if (agentPanelOpen) {
+      toggleAgentPanel();
     }
     return;
   }
@@ -392,6 +392,25 @@ async function sendAgentMessage() {
   agentMessages.scrollTop = agentMessages.scrollHeight;
 
   try {
+    const helpKeywords = [
+      'shortcut', 'shortcuts', 'keybind', 'keybinds', 'keyboard',
+      'hotkey', 'hotkeys', 'how do i', 'how to', 'what key', 'what keys',
+      'help', 'command', 'keys for', 'key for',
+    ];
+    const isHelpQuery = helpKeywords.some(kw => text.toLowerCase().includes(kw));
+
+    if (isHelpQuery) {
+      const { response, error: helpError } = await window.api.intelligenceQueryHelp(text);
+      if (helpError) {
+        replyMsg.className = 'agent-message error';
+        replyMsg.textContent = helpError;
+        return;
+      }
+      replyMsg.className = 'agent-message assistant';
+      replyMsg.textContent = response;
+      return;
+    }
+
     // Notes context: use current filter state; fall back to all notes if list is empty
     const notesContext = notes.length > 0 ? notes : await window.api.getNotes();
 

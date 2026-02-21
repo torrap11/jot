@@ -16,4 +16,5 @@ contextBridge.exposeInMainWorld('api', {
   intelligenceQuery:           (userMessage, notes) => ipcRenderer.invoke('intelligence-query', { userMessage, notes }),
   intelligenceQueryStructured: (userMessage, notes) => ipcRenderer.invoke('intelligence-query-structured', { userMessage, notes }),
   intelligenceExecute:         (actions)            => ipcRenderer.invoke('intelligence-execute', actions),
+  intelligenceQueryHelp:       (userMessage)        => ipcRenderer.invoke('intelligence-query-help', { userMessage }),
 });

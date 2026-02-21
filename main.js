@@ -1,6 +1,7 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, screen, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const keybinds = require('./keybinds');
 
 let win;
 
@@ -88,6 +89,22 @@ app.whenReady().then(() => {
     try {
       const actions = await llm.callLLMWithStructuredOutput(userMessage, notes);
       return { actions };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('intelligence-query-help', async (_e, { userMessage }) => {
+    try {
+      const shortcuts = [...keybinds.global, ...keybinds.inApp]
+        .map(s => `- ${s.keys}: ${s.action}`)
+        .join('\n');
+      const systemPrompt =
+        AGENT_SYSTEM_PROMPT +
+        ' You can also answer questions about keyboard shortcuts. Here are the shortcuts:\n' +
+        shortcuts;
+      const response = await llm.callLLM(systemPrompt, userMessage, []);
+      return { response };
     } catch (err) {
       return { error: err.message };
     }
