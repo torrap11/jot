@@ -10,20 +10,16 @@
 
 /** Canonical trigger IDs → human-readable labels */
 const TRIGGER_LABELS = {
-  netflix_open:  'Netflix',
-  linkedin_open: 'LinkedIn',
-  gmail_open:    'Gmail',
-  work_start:    'Work',
-  general:       'General',
+  netflix_open: 'Netflix',
+  spotify_open: 'Spotify',
+  general:      'General',
 };
 
 /** Trigger IDs → emoji icons for UI display */
 const TRIGGER_ICONS = {
-  netflix_open:  '📺',
-  linkedin_open: '💼',
-  gmail_open:    '📧',
-  work_start:    '🖥️',
-  general:       '💡',
+  netflix_open: '📺',
+  spotify_open: '🎵',
+  general:      '💡',
 };
 
 /**
@@ -66,7 +62,29 @@ function normalizeTrigger(input) {
   return s;
 }
 
+/**
+ * Semantic keywords for each trigger.
+ * Used to surface jots even when they don't contain the trigger's name.
+ * e.g. "listen to spanish music" should match spotify_open via 'music'/'listen'.
+ */
+const TRIGGER_KEYWORDS = {
+  spotify_open: ['spotify', 'music', 'song', 'playlist', 'listen', 'album', 'track', 'podcast', 'audio'],
+  netflix_open: ['netflix', 'watch', 'movie', 'show', 'episode', 'film', 'series', 'stream'],
+  general:      [],
+};
+
+/**
+ * Return all semantic search keywords for a trigger.
+ * Falls back to just the lowercase label for unknown triggers.
+ */
+function getTriggerKeywords(triggerId) {
+  return TRIGGER_KEYWORDS[triggerId] || [TRIGGER_LABELS[triggerId]?.toLowerCase()].filter(Boolean);
+}
+
 /** All defined trigger IDs as an array, for UI iteration. */
 const ALL_TRIGGERS = Object.keys(TRIGGER_LABELS);
 
-module.exports = { TRIGGER_LABELS, TRIGGER_ICONS, getTriggerLabel, getTriggerIcon, normalizeTrigger, ALL_TRIGGERS };
+module.exports = {
+  TRIGGER_LABELS, TRIGGER_ICONS, TRIGGER_KEYWORDS,
+  getTriggerLabel, getTriggerIcon, getTriggerKeywords, normalizeTrigger, ALL_TRIGGERS,
+};

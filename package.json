@@ -5,7 +5,8 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "postinstall": "electron-rebuild"
+    "postinstall": "electron-rebuild",
+    "test": "npm rebuild better-sqlite3 && node --test tests/test-*.js; npx electron-rebuild -f -w better-sqlite3"
   },
   "keywords": [],
   "author": "",

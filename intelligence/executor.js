@@ -2,6 +2,7 @@
 
 const VALID_TYPES = new Set([
   'search', 'create_note', 'create_folder', 'move_note_to_folder', 'organize_into_folders',
+  'web_search',
 ]);
 
 /**
@@ -24,7 +25,9 @@ async function executeActions(actions, db) {
       continue;
     }
     try {
-      const result = executeSingle(action, db);
+      const result = action.type === 'web_search'
+        ? await executeWebSearch(action.payload)
+        : executeSingle(action, db);
       results.push({ type: action.type, result });
     } catch (err) {
       errors.push({ type: action.type, error: err.message });
@@ -84,6 +87,24 @@ function executeSingle(action, db) {
       }
       return created;
     }
+  }
+}
+
+async function executeWebSearch(payload) {
+  const query = (payload && payload.query) ? payload.query.trim() : '';
+  if (!query) return { query: '', snippet: 'No query provided.' };
+  const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+  try {
+    const res  = await fetch(url);
+    const data = await res.json();
+    const snippet =
+      data.Abstract ||
+      data.Answer ||
+      (Array.isArray(data.RelatedTopics) && data.RelatedTopics[0] && data.RelatedTopics[0].Text) ||
+      'No results found.';
+    return { query, snippet: snippet.slice(0, 400) };
+  } catch (err) {
+    return { query, snippet: `Search failed: ${err.message}` };
   }
 }
 

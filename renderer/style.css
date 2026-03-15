@@ -76,34 +76,26 @@ body {
   background: #fbbf24;
 }
 
-/* ── Jot type filter (All | Notes | Triggers | Scheduled) ── */
-#jot-type-bar {
+/* Focus note bar (e.g. after reminder that creates a single note) */
+.focus-note-bar {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
+  padding: 4px 8px;
   border-bottom: 1px solid #e5d89c;
-  background: #fef9c3;
+  background: #fef3c7;
   flex-shrink: 0;
 }
-.jot-type-pill {
-  background: none;
-  border: 1px solid #d4a017;
-  color: #78350f;
-  padding: 2px 8px;
-  border-radius: 10px;
+.focus-note-bar.hidden { display: none; }
+.focus-note-bar button {
   font-size: 11px;
-  font-family: inherit;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid #d4a017;
+  background: #fef9c3;
+  color: #78350f;
   cursor: pointer;
-  white-space: nowrap;
 }
-.jot-type-pill:hover { background: #fde68a; }
-.jot-type-pill.active {
-  background: #fde68a;
-  border-color: #92400e;
-  color: #422006;
-  font-weight: 600;
-}
+.focus-note-bar button:hover { background: #fde68a; }
 
 #note-list {
   flex: 1;
@@ -867,6 +859,120 @@ body {
 
 #voice-error-text {
   flex: 1;
+}
+
+/* ── Universal Voice Command bar (Cmd+M) ── */
+/* Green palette — distinct from orange voice-bar and amber config-bar */
+
+#voice-cmd-bar {
+  background: #ecfdf5;
+  border-bottom: 1px solid #6ee7b7;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #065f46;
+  flex-shrink: 0;
+}
+
+#voice-cmd-bar.hidden {
+  display: none;
+}
+
+#vcmd-state-recording,
+#vcmd-state-processing,
+#vcmd-state-confirm,
+#vcmd-state-success,
+#vcmd-state-error {
+  display: none;
+}
+
+#vcmd-state-recording.active,
+#vcmd-state-processing.active,
+#vcmd-state-confirm.active,
+#vcmd-state-success.active,
+#vcmd-state-error.active {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#vcmd-transcript-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+  color: #065f46;
+}
+
+#vcmd-send-btn, #vcmd-redo-btn, #vcmd-close-btn {
+  background: none;
+  border: 1px solid #6ee7b7;
+  color: #065f46;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+#vcmd-send-btn { background: #d1fae5; font-weight: 600; }
+#vcmd-send-btn:hover { background: #a7f3d0; }
+#vcmd-redo-btn:hover, #vcmd-close-btn:hover { background: #d1fae5; }
+
+.vcmd-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #059669;
+  flex-shrink: 0;
+  animation: vcmd-dot-blink 0.8s ease-in-out infinite;
+}
+
+@keyframes vcmd-dot-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+
+.vcmd-spinner {
+  display: inline-block;
+  animation: voice-spin 0.6s linear infinite;
+}
+
+#vcmd-stop-btn,
+#vcmd-error-dismiss-btn {
+  background: none;
+  border: 1px solid #6ee7b7;
+  color: #065f46;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+#vcmd-stop-btn:hover,
+#vcmd-error-dismiss-btn:hover {
+  background: #d1fae5;
+}
+
+#vcmd-state-error {
+  color: #991b1b;
+}
+
+#vcmd-error-text {
+  flex: 1;
+}
+
+#vcmd-success-icon {
+  flex-shrink: 0;
+}
+
+#vcmd-success-text {
+  flex: 1;
+  font-weight: 500;
+  color: #065f46;
 }
 
 /* ── Trigger demo panel (inside agent panel) ── */

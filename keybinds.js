@@ -1,7 +1,7 @@
 module.exports = {
   global: [
-    { keys: 'Cmd+E',         action: 'Toggle app window (show/hide)' },
-    { keys: 'Cmd+Shift+J',   action: 'Start/stop voice memory capture' },
+    { keys: 'Cmd+E', action: 'Toggle app window (show/hide)' },
+    { keys: 'Cmd+M', action: 'Universal voice command — dictate a note, set a reminder, save a trigger memory, control the app, or prompt the agent' },
   ],
   inApp: [
     { keys: 'Cmd+J', action: 'Switch focus between Jot Agent and jots panel' },

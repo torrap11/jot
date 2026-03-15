@@ -60,6 +60,10 @@ function getDb() {
       created_at        TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
+  const reminderCols = db.pragma('table_info(scheduled_reminders)').map(c => c.name);
+  if (!reminderCols.includes('note_content')) {
+    db.exec('ALTER TABLE scheduled_reminders ADD COLUMN note_content TEXT');
+  }
 
   return db;
 }
@@ -173,13 +177,13 @@ function deleteIntentMemory(id) {
 
 /**
  * Create a new scheduled reminder.
- * @param {{ content: string, scheduleType: 'once'|'daily', scheduledTime: string }} data
+ * @param {{ content: string, scheduleType: 'once'|'daily', scheduledTime: string, noteContent?: string }} data
  */
-function createScheduledReminder({ content, scheduleType = 'once', scheduledTime }) {
+function createScheduledReminder({ content, scheduleType = 'once', scheduledTime, noteContent = null }) {
   const stmt = getDb().prepare(
-    'INSERT INTO scheduled_reminders (content, schedule_type, scheduled_time) VALUES (?, ?, ?)'
+    'INSERT INTO scheduled_reminders (content, schedule_type, scheduled_time, note_content) VALUES (?, ?, ?, ?)'
   );
-  const result = stmt.run(content, scheduleType, scheduledTime);
+  const result = stmt.run(content, scheduleType, scheduledTime, noteContent || null);
   return getDb().prepare('SELECT * FROM scheduled_reminders WHERE id = ?').get(result.lastInsertRowid);
 }
 

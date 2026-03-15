@@ -45,17 +45,18 @@ function toggleWindow() {
   if (win.isVisible()) { win.hide(); } else { win.show(); win.focus(); }
 }
 
-// ── Send a toggle-voice-capture event to renderer ─────────────────────────
-function sendToggleVoice() {
+// ── Send a toggle-voice-command event to renderer (Cmd+M) ─────────────────
+function sendToggleVoiceCommand() {
   if (!win) return;
   if (win.isVisible()) {
-    win.webContents.send('toggle-voice-capture');
+    win.webContents.send('toggle-voice-command');
   } else {
     win.show();
     win.focus();
-    win.webContents.send('toggle-voice-capture');
+    win.webContents.send('toggle-voice-command');
   }
 }
+
 
 app.whenReady().then(() => {
   const db          = require('./database');
@@ -64,10 +65,11 @@ app.whenReady().then(() => {
   const voice       = require('./voice');
   const tts         = require('./tts');
   const { parseIntent }                             = require('./intentParser');
-  const { normalizeTrigger, getTriggerLabel, getTriggerIcon } = require('./triggerEngine');
+  const { normalizeTrigger, getTriggerLabel, getTriggerIcon, getTriggerKeywords } = require('./triggerEngine');
   const { getConfig }                               = require('./config');
   const { startScheduler, fireById }                = require('./scheduler');
   const { parseReminderNL }                         = require('./reminderParser');
+  const { classifyVoiceCommand }                    = require('./voiceCommand');
 
   createWindow();
 
@@ -85,8 +87,8 @@ app.whenReady().then(() => {
   }
 
   // ── Global hotkeys ──────────────────────────────────────────────────────
-  globalShortcut.register('Command+E',         toggleWindow);
-  globalShortcut.register('Command+Shift+J',   sendToggleVoice);
+  globalShortcut.register('Command+E', toggleWindow);
+  globalShortcut.register('Command+M', sendToggleVoiceCommand);
 
   // ── Note & folder handlers ──────────────────────────────────────────────
   ipcMain.handle('get-notes',          ()                     => db.getAllNotes());
@@ -104,6 +106,7 @@ app.whenReady().then(() => {
   const AGENT_SYSTEM_PROMPT =
     'You are Jot Agent, an AI assistant embedded in a voice-memory sticky-note app. ' +
     'Help the user understand, search, and act on their notes. ' +
+    'You can also research topics online using the web_search action. ' +
     'Be concise and actionable. When referencing a note, use [Note ID] format.';
 
   ipcMain.handle('intelligence-query', async (_e, { userMessage, notes }) => {
@@ -122,14 +125,19 @@ app.whenReady().then(() => {
     } catch (err) { return { error: err.message }; }
   });
 
-  ipcMain.handle('intelligence-query-help', async (_e, { userMessage }) => {
+  ipcMain.handle('intelligence-query-help', (_e, { userMessage }) => {
     try {
-      const shortcuts = [...keybinds.global, ...keybinds.inApp]
-        .map(s => `- ${s.keys}: ${s.action}`)
+      const all = [...keybinds.global, ...keybinds.inApp];
+      // Find shortcuts relevant to the query (keyword match)
+      const words = (userMessage || '').toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      const matches = words.length
+        ? all.filter(s => words.some(w => s.action.toLowerCase().includes(w) || s.keys.toLowerCase().includes(w)))
+        : [];
+      const list = (matches.length > 0 ? matches : all)
+        .map(s => `${s.keys} — ${s.action}`)
         .join('\n');
-      const sys = AGENT_SYSTEM_PROMPT +
-        '\nKeyboard shortcuts:\n' + shortcuts;
-      return { response: await llm.callLLM(sys, userMessage, []) };
+      const intro = matches.length > 0 ? 'Here are the matching shortcuts:' : 'Here are all keyboard shortcuts:';
+      return { response: `${intro}\n\n${list}` };
     } catch (err) { return { error: err.message }; }
   });
 
@@ -171,6 +179,16 @@ app.whenReady().then(() => {
     }
   });
 
+  // Classify a transcript into { mode, payload } for Cmd+M universal voice command
+  ipcMain.handle('classify-voice-command', async (_e, transcript) => {
+    try {
+      const classification = await classifyVoiceCommand(transcript);
+      return { classification };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
   // Parse transcript text into structured intent
   ipcMain.handle('parse-intent', async (_e, transcript) => {
     try {
@@ -206,7 +224,21 @@ app.whenReady().then(() => {
       const triggerId = normalizeTrigger(triggerInput);
       const label     = getTriggerLabel(triggerId);
       const icon      = getTriggerIcon(triggerId);
-      const memories  = db.getIntentMemoriesByTrigger(triggerId);
+
+      // Exact trigger-tag match
+      const exactMemories = db.getIntentMemoriesByTrigger(triggerId);
+      const exactIds = new Set(exactMemories.map(m => m.id));
+
+      // Content-based fallback: any jot whose content matches semantic keywords for this trigger
+      const keywords = getTriggerKeywords(triggerId);
+      const matchesKeywords = (text) => keywords.some(kw => text.toLowerCase().includes(kw));
+      const contentMemories = db.getAllIntentMemories()
+        .filter(m => !exactIds.has(m.id) && matchesKeywords(m.content));
+      const noteMatches = db.getAllNotes()
+        .filter(n => !n.content.startsWith('data:image/') && matchesKeywords(n.content))
+        .map(n => ({ ...n, trigger: triggerId, category: 'note' }));
+
+      const memories = [...exactMemories, ...contentMemories, ...noteMatches];
 
       // TTS read-out (optional)
       let audioData = null;
@@ -250,9 +282,9 @@ app.whenReady().then(() => {
 
   // ── Scheduled Reminders ─────────────────────────────────────────────────
 
-  ipcMain.handle('create-scheduled-reminder', (_e, { content, scheduleType, scheduledTime }) => {
+  ipcMain.handle('create-scheduled-reminder', (_e, { content, scheduleType, scheduledTime, noteContent }) => {
     try {
-      return { reminder: db.createScheduledReminder({ content, scheduleType, scheduledTime }) };
+      return { reminder: db.createScheduledReminder({ content, scheduleType, scheduledTime, noteContent }) };
     } catch (err) {
       return { error: err.message };
     }
@@ -288,17 +320,24 @@ app.whenReady().then(() => {
   ipcMain.handle('fire-reminder', async (_e, id) => {
     try {
       const audioData = await fireById(id, db, tts);
-      // Also push reminder-due event to renderer so notification shows
       const reminders = db.getAllScheduledReminders();
       const reminder = reminders.find(r => r.id === id);
-      if (reminder && win && !win.isDestroyed()) {
-        win.webContents.send('reminder-due', { id, content: reminder.content, audioData });
+      if (!reminder || !win || win.isDestroyed()) return { ok: true, audioData };
+      const payload = { id, content: reminder.content, audioData };
+      if (reminder.note_content) {
+        try {
+          const note = db.createNote(reminder.note_content);
+          payload.noteId = note.id;
+          payload.showOnlyThisNote = true;
+        } catch (e) { /* ignore */ }
       }
+      win.webContents.send('reminder-due', payload);
       return { ok: true, audioData };
     } catch (err) {
       return { error: err.message };
     }
   });
+
 });
 
 app.on('will-quit', () => { globalShortcut.unregisterAll(); });

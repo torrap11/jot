@@ -39,6 +39,10 @@ contextBridge.exposeInMainWorld('api', {
   // Delete one intent memory
   deleteIntentMemory: (id)      => ipcRenderer.invoke('delete-intent-memory', id),
 
+  // ── Universal Voice Command (Cmd+M) ───────────────────────────────────
+  // Classify a transcript into { mode, payload } — mode: 'dictate'|'app_control'|'agent'
+  classifyVoiceCommand: (transcript) => ipcRenderer.invoke('classify-voice-command', transcript),
+
   // ── Config status (no secrets exposed) ────────────────────────────────
   getConfigStatus: () => ipcRenderer.invoke('get-config-status'),
 
@@ -52,6 +56,8 @@ contextBridge.exposeInMainWorld('api', {
   // ── IPC events from main process ──────────────────────────────────────
   // Voice capture toggle sent by the global hotkey (Cmd+Shift+J)
   onToggleVoiceCapture: (cb) => ipcRenderer.on('toggle-voice-capture', () => cb()),
+  // Universal voice command toggle sent by the global hotkey (Cmd+M)
+  onToggleVoiceCommand: (cb) => ipcRenderer.on('toggle-voice-command', () => cb()),
   // Reminder due (pushed by scheduler)
   onReminderDue: (cb) => ipcRenderer.on('reminder-due', (_e, data) => cb(data)),
 });

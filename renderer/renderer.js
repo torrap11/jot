@@ -42,7 +42,6 @@ const triggerNotificationIcon = document.getElementById('trigger-notification-ic
 const triggerNotificationLabel = document.getElementById('trigger-notification-label');
 const triggerNotificationClose = document.getElementById('trigger-notification-close');
 const triggerNotificationMemories = document.getElementById('trigger-notification-memories');
-const jotTypeBar = document.getElementById('jot-type-bar');
 const jotDetailView = document.getElementById('jot-detail-view');
 const jotDetailHeader = document.getElementById('jot-detail-header');
 const jotDetailBadge = document.getElementById('jot-detail-badge');
@@ -50,6 +49,24 @@ const jotDetailMeta = document.getElementById('jot-detail-meta');
 const jotDetailBack = document.getElementById('jot-detail-back');
 const jotDetailContent = document.getElementById('jot-detail-content');
 const jotDetailActions = document.getElementById('jot-detail-actions');
+
+// ── Universal Voice Command elements (Cmd+M) ──
+const voiceCmdBar         = document.getElementById('voice-cmd-bar');
+const vcmdStateRecording  = document.getElementById('vcmd-state-recording');
+const vcmdStateProcessing = document.getElementById('vcmd-state-processing');
+const vcmdStateConfirm    = document.getElementById('vcmd-state-confirm');
+const vcmdStateSuccess    = document.getElementById('vcmd-state-success');
+const vcmdStateError      = document.getElementById('vcmd-state-error');
+const vcmdStopBtn         = document.getElementById('vcmd-stop-btn');
+const vcmdSendBtn         = document.getElementById('vcmd-send-btn');
+const vcmdRedoBtn         = document.getElementById('vcmd-redo-btn');
+const vcmdCloseBtn        = document.getElementById('vcmd-close-btn');
+const vcmdErrorDismissBtn = document.getElementById('vcmd-error-dismiss-btn');
+const vcmdProcessingLabel = document.getElementById('vcmd-processing-label');
+const vcmdTranscriptText  = document.getElementById('vcmd-transcript-text');
+const vcmdSuccessIcon     = document.getElementById('vcmd-success-icon');
+const vcmdSuccessText     = document.getElementById('vcmd-success-text');
+const vcmdErrorText       = document.getElementById('vcmd-error-text');
 
 function isImageNote(note) {
   return note && note.content && note.content.startsWith('data:image/');
@@ -65,12 +82,6 @@ let folders = [];
 let folderOrganizeOpen = false;
 let currentJotDetail = null; // { type: 'trigger'|'scheduled', data } when viewing a non-note jot
 
-// Jot type filter: all | notes | triggers | scheduled
-let currentJotTypeFilter = (() => {
-  const v = localStorage.getItem('jot-type-filter');
-  return (v === 'notes' || v === 'triggers' || v === 'scheduled') ? v : 'all';
-})();
-
 // Restore folder filter from previous session
 let currentFolderFilter = (() => {
   const v = localStorage.getItem('jot-folder-filter');
@@ -79,22 +90,12 @@ let currentFolderFilter = (() => {
   return Number(v);
 })();
 
+// When set, notes panel shows only this note (e.g. after a reminder that creates a note)
+let focusNoteId = null;
+
 function setFolderFilter(val) {
   currentFolderFilter = val;
   localStorage.setItem('jot-folder-filter', val === null ? 'unfiled' : String(val));
-}
-
-function setJotTypeFilter(val) {
-  currentJotTypeFilter = val;
-  localStorage.setItem('jot-type-filter', val);
-  jotTypeBar.querySelectorAll('.jot-type-pill').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.jotType === val);
-  });
-  if (val === 'notes') {
-    folderBar.classList.remove('hidden');
-  } else {
-    folderBar.classList.add('hidden');
-  }
 }
 
 /** Normalize raw items to unified jot shape: { jotType, id, content, sortAt, ... } */
@@ -113,15 +114,15 @@ async function loadJots(selectId = null, selectJotType = null) {
   let rawMemories = [];
   let rawReminders = [];
 
-  if (currentJotTypeFilter === 'all' || currentJotTypeFilter === 'notes') {
-    rawNotes = (currentJotTypeFilter === 'all')
+  if (focusNoteId != null) {
+    // Focus mode: show only this one note (e.g. after reminder fired with note_content)
+    rawNotes = await window.api.getNotes();
+    rawNotes = rawNotes.filter((n) => n.id === focusNoteId);
+  } else {
+    rawNotes = (currentFolderFilter === 'all')
       ? await window.api.getNotes()
-      : (currentFolderFilter === 'all' ? await window.api.getNotes() : await window.api.getNotesByFolder(currentFolderFilter));
-  }
-  if (currentJotTypeFilter === 'all' || currentJotTypeFilter === 'triggers') {
+      : await window.api.getNotesByFolder(currentFolderFilter);
     rawMemories = await window.api.getIntentMemories();
-  }
-  if (currentJotTypeFilter === 'all' || currentJotTypeFilter === 'scheduled') {
     rawReminders = await window.api.getScheduledReminders();
   }
 
@@ -132,15 +133,31 @@ async function loadJots(selectId = null, selectJotType = null) {
 
   noteList.innerHTML = '';
 
+  // Show "Show all" bar when in focus-note mode
+  let focusBar = document.getElementById('focus-note-bar');
+  if (focusNoteId != null) {
+    if (!focusBar) {
+      focusBar = document.createElement('div');
+      focusBar.id = 'focus-note-bar';
+      focusBar.className = 'focus-note-bar';
+      const showAllBtn = document.createElement('button');
+      showAllBtn.type = 'button';
+      showAllBtn.textContent = 'Show all jots';
+      showAllBtn.id = 'focus-note-show-all';
+      focusBar.appendChild(showAllBtn);
+      noteList.parentElement.insertBefore(focusBar, noteList);
+      showAllBtn.addEventListener('click', () => {
+        focusNoteId = null;
+        loadJots();
+      });
+    }
+    focusBar.classList.remove('hidden');
+  } else if (focusBar) {
+    focusBar.classList.add('hidden');
+  }
+
   if (notes.length === 0) {
-    const emptyMsg = currentJotTypeFilter === 'all'
-      ? 'Press + to add a jot. Write a note, a time-based reminder, or “when I open X…” and the app will figure it out.'
-      : currentJotTypeFilter === 'notes'
-          ? 'Press + to create a jot.'
-        : currentJotTypeFilter === 'triggers'
-          ? 'Use 🎙️ to record, or type “when I open X…” in a new jot.'
-          : 'Press + and write something like “at 10 PM remind me to…”';
-    noteList.innerHTML = `<div class="empty-state">${emptyMsg}</div>`;
+    noteList.innerHTML = `<div class=”empty-state”>Press + to add a jot. Write a note, a time-based reminder, or “when I open X…” and the app will figure it out.</div>`;
     selectedIndex = -1;
     return;
   }
@@ -153,7 +170,7 @@ async function loadJots(selectId = null, selectJotType = null) {
     if (selectedIndex < 0) selectedIndex = 0;
   }
 
-  const TRIGGER_ICONS_MAP = { netflix_open: '📺', linkedin_open: '💼', gmail_open: '📧', work_start: '🖥️', general: '💡' };
+  const TRIGGER_ICONS_MAP = { netflix_open: '📺', linkedin_open: '💼', gmail_open: '📧', work_start: '🖥️', spotify_open: '🎵', general: '💡' };
   const getTriggerIcon = (t) => TRIGGER_ICONS_MAP[t] || '💡';
 
   notes.forEach((jot, index) => {
@@ -220,7 +237,7 @@ function openJotDetail(type, jot) {
   jotDetailContent.textContent = jot.content || '';
 
   if (type === 'trigger') {
-    const TRIGGER_ICONS_MAP = { netflix_open: '📺', linkedin_open: '💼', gmail_open: '📧', work_start: '🖥️', general: '💡' };
+    const TRIGGER_ICONS_MAP = { netflix_open: '📺', linkedin_open: '💼', gmail_open: '📧', work_start: '🖥️', spotify_open: '🎵', general: '💡' };
     jotDetailBadge.textContent = (TRIGGER_ICONS_MAP[jot.trigger] || '💡') + ' Trigger';
     jotDetailMeta.textContent = `${jot.trigger} · ${jot.category}`;
     jotDetailActions.innerHTML = '<button type="button" id="jot-detail-delete">Delete</button>';
@@ -431,6 +448,16 @@ document.addEventListener('paste', async (e) => {
 });
 
 document.addEventListener('keydown', async (e) => {
+  // Spacebar stops voice recording (only when mic is active and not typing in a field)
+  if (e.code === 'Space' && cmdMActive) {
+    const tag = document.activeElement?.tagName;
+    if (tag !== 'TEXTAREA' && tag !== 'INPUT') {
+      e.preventDefault();
+      stopVoiceCmd();
+      return;
+    }
+  }
+
   const inList = isListVisible();
 
   if (inList && notes.length > 0) {
@@ -479,6 +506,10 @@ document.addEventListener('keydown', async (e) => {
 
   if (e.key === 'Escape') {
     e.preventDefault();
+    if (cmdMActive || !voiceCmdBar.classList.contains('hidden')) {
+      dismissVoiceCmd();
+      return;
+    }
     if (currentNote) {
       await showList();
     } else if (currentJotDetail) {
@@ -994,7 +1025,6 @@ folderOrganizeDescInput.addEventListener('keydown', (e) => {
 restoreAgentChat();
 showAgentPanel();
 loadFolders();
-setJotTypeFilter(currentJotTypeFilter);
 loadJots();
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1036,6 +1066,7 @@ let mediaRecorder = null;
 let audioChunks = [];
 let pendingTranscript = null; // transcript awaiting user confirmation
 let voiceActive = false;      // true while recording
+let cmdMActive  = false;      // true while Cmd+M voice command is recording
 let triggerNotifTimeout = null;
 
 // ── Voice bar state machine ──────────────────────────────────────────────
@@ -1055,6 +1086,7 @@ function setVoiceBarState(state) {
 
 async function startVoiceRecording() {
   if (voiceActive) return;
+  if (cmdMActive) return;
 
   let stream;
   try {
@@ -1179,13 +1211,11 @@ function toggleVoiceCapture() {
 
 // ── Event wiring ─────────────────────────────────────────────────────────
 
-voiceBtn.addEventListener('click', toggleVoiceCapture);
+voiceBtn.addEventListener('click', toggleVoiceCommand);
 voiceStopBtn.addEventListener('click', stopVoiceRecording);
 voiceSaveBtn.addEventListener('click', saveVoiceMemory);
 voiceDismissBtn.addEventListener('click', dismissVoiceBar);
 voiceErrorDismissBtn.addEventListener('click', dismissVoiceBar);
-
-window.api.onToggleVoiceCapture(toggleVoiceCapture);
 
 // ════════════════════════════════════════════════════════════════════════════
 // TRIGGER SIMULATION & NOTIFICATION
@@ -1238,15 +1268,6 @@ triggerNotificationClose.addEventListener('click', closeTriggerNotification);
 document.querySelectorAll('.trigger-btn').forEach(btn => {
   btn.addEventListener('click', () => simulateTrigger(btn.dataset.trigger));
 });
-
-// ── Jot type filter bar ───────────────────────────────────────────────────
-jotTypeBar.querySelectorAll('.jot-type-pill').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    setJotTypeFilter(btn.dataset.jotType);
-    loadJots();
-  });
-});
-setJotTypeFilter(currentJotTypeFilter);
 
 // ════════════════════════════════════════════════════════════════════════════
 // CONFIG STATUS — show setup hint if no API keys configured
@@ -1404,8 +1425,305 @@ reminderNotifClose.addEventListener('click', closeReminderNotification);
 
 // ── Push event from scheduler ─────────────────────────────────────────────
 
-window.api.onReminderDue(async ({ content, audioData }) => {
+window.api.onReminderDue(async ({ content, audioData, noteId, showOnlyThisNote }) => {
   showReminderNotification(content);
   playAudioBuffer(audioData);
+  if (noteId != null && showOnlyThisNote) {
+    focusNoteId = noteId;
+  }
   await loadJots();
+  if (noteId != null && showOnlyThisNote && notes.length > 0) {
+    const jot = notes.find((j) => j.jotType === 'note' && j.id === noteId);
+    if (jot) {
+      selectedIndex = notes.indexOf(jot);
+      updateSelectionHighlight();
+      openNote(jot);
+    }
+  } else if (focusNoteId == null) {
+    updateSelectionHighlight();
+  }
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// UNIVERSAL VOICE COMMAND (Cmd+M)
+// ════════════════════════════════════════════════════════════════════════════
+
+let cmdMediaRecorder     = null;
+let cmdAudioChunks       = [];
+let cmdPendingTranscript = null;
+
+function setVoiceCmdState(state) {
+  voiceCmdBar.classList.toggle('hidden', state === 'hidden');
+  vcmdStateRecording.classList.toggle('active',  state === 'recording');
+  vcmdStateProcessing.classList.toggle('active', state === 'processing');
+  vcmdStateConfirm.classList.toggle('active',    state === 'confirm');
+  vcmdStateSuccess.classList.toggle('active',    state === 'success');
+  vcmdStateError.classList.toggle('active',      state === 'error');
+}
+
+async function startVoiceCmd() {
+  if (cmdMActive) { stopVoiceCmd(); return; }
+  if (voiceActive) return; // Cmd+Shift+J is already recording
+
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    showVoiceCmdError('Microphone access denied.');
+    return;
+  }
+
+  cmdAudioChunks = [];
+  cmdMediaRecorder = new MediaRecorder(stream);
+  cmdMediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) cmdAudioChunks.push(e.data); };
+  cmdMediaRecorder.start(100);
+
+  cmdMActive = true;
+  setVoiceCmdState('recording');
+}
+
+// Stop recording → transcribe → show confirm (Send / Redo / Close)
+async function stopVoiceCmd() {
+  if (!cmdMActive || !cmdMediaRecorder) return;
+
+  setVoiceCmdState('processing');
+  vcmdProcessingLabel.textContent = 'Transcribing…';
+  cmdMActive = false;
+
+  await new Promise((resolve) => { cmdMediaRecorder.onstop = resolve; cmdMediaRecorder.stop(); });
+  cmdMediaRecorder.stream.getTracks().forEach((t) => t.stop());
+  cmdMediaRecorder = null;
+
+  const blob = new Blob(cmdAudioChunks, { type: 'audio/webm' });
+  cmdAudioChunks = [];
+  const ab = await blob.arrayBuffer();
+
+  const { transcript, error: sttErr } = await window.api.transcribeAudio(ab);
+  if (sttErr || !transcript) {
+    showVoiceCmdError(sttErr || 'Could not understand audio.');
+    return;
+  }
+
+  // Show transcript for review before executing
+  cmdPendingTranscript = transcript;
+  vcmdTranscriptText.textContent = `"${transcript}"`;
+  setVoiceCmdState('confirm');
+}
+
+// Classify + execute the confirmed transcript
+async function sendVoiceCmd() {
+  const transcript = cmdPendingTranscript;
+  if (!transcript) return;
+  cmdPendingTranscript = null;
+
+  setVoiceCmdState('processing');
+  vcmdProcessingLabel.textContent = 'Processing…';
+
+  const { classification, error: clsErr } = await window.api.classifyVoiceCommand(transcript);
+  if (clsErr || !classification) {
+    showVoiceCmdError(clsErr || 'Classification failed.');
+    return;
+  }
+
+  await executeCmdClassification(transcript, classification);
+}
+
+async function executeCmdClassification(rawTranscript, classification) {
+  const { mode, payload } = classification;
+  if (mode === 'trigger') {
+    await executeCmdTrigger(payload, rawTranscript);
+  } else if (mode === 'scheduled') {
+    await executeCmdScheduled(payload, rawTranscript);
+  } else if (mode === 'dictate') {
+    await executeCmdDictate(payload.text || rawTranscript);
+  } else if (mode === 'app_control') {
+    await executeCmdAppControl(payload);
+  } else if (mode === 'agent') {
+    executeCmdAgent(payload.query || rawTranscript);
+  } else {
+    await executeCmdDictate(rawTranscript);
+  }
+}
+
+async function executeCmdTrigger(payload, rawTranscript) {
+  const intent = {
+    trigger:  payload.trigger  || 'general',
+    content:  payload.content  || rawTranscript,
+    category: payload.category || 'other',
+  };
+  const { memory, audioData, error } = await window.api.saveIntentMemory(intent);
+  if (error) { showVoiceCmdError(error); return; }
+  playAudioBuffer(audioData);
+  await loadJots();
+  showVoiceCmdSuccess('🎯', 'Trigger memory saved');
+}
+
+async function executeCmdScheduled(payload, rawTranscript) {
+  // LLM gives us the structured payload; fall back to client NL parser if time is missing
+  let { content, scheduleType, scheduledTime } = payload;
+  if (!scheduledTime) {
+    const parsed = parseReminderNLClient(rawTranscript);
+    if (parsed) { content = parsed.content; scheduleType = parsed.scheduleType; scheduledTime = parsed.scheduledTime; }
+  }
+  if (!scheduledTime) { showVoiceCmdError('Could not determine the time. Try "at 10 PM remind me to…"'); return; }
+  const { reminder, error } = await window.api.createScheduledReminder({ content, scheduleType, scheduledTime });
+  if (error) { showVoiceCmdError(error); return; }
+  await loadJots();
+  showVoiceCmdSuccess('⏰', 'Reminder set');
+}
+
+// Strip meta-instruction prefixes the LLM sometimes leaves in dictated text.
+// e.g. "make a note saying watch Breaking Bad" → "watch Breaking Bad"
+function stripDictatePrefix(text) {
+  const prefixes = [
+    /^make a note (saying|that says|that|:)\s*/i,
+    /^create a note (saying|that says|that|:)\s*/i,
+    /^write a note (saying|that says|that|:)\s*/i,
+    /^add a note (saying|that says|that|:)\s*/i,
+    /^note (that says|saying|that|:)\s*/i,
+    /^jot (down|this down|this)(\s+that|\s+saying|\s*:)?\s*/i,
+    /^write (down|this down|this)(\s+that|\s+saying|\s*:)?\s*/i,
+    /^(write|add|note)\s*:\s*/i,
+  ];
+  let s = text.trim();
+  for (const re of prefixes) {
+    const m = s.match(re);
+    if (m) { s = s.slice(m[0].length).trim(); break; }
+  }
+  return s || text.trim();
+}
+
+async function executeCmdDictate(text) {
+  const cleaned = stripDictatePrefix(text);
+  const focused = document.activeElement;
+  if (focused && (focused.tagName === 'TEXTAREA' || focused.tagName === 'INPUT') && focused !== agentInput) {
+    // Insert at cursor position in active text field
+    const start = focused.selectionStart;
+    const end   = focused.selectionEnd;
+    const before = focused.value.substring(0, start);
+    const after  = focused.value.substring(end);
+    focused.value = before + cleaned + after;
+    focused.selectionStart = focused.selectionEnd = start + cleaned.length;
+    focused.dispatchEvent(new Event('input', { bubbles: true }));
+    showVoiceCmdSuccess('✏️', 'Inserted');
+  } else {
+    // Create a new jot with the dictated text
+    const note = await window.api.createNote(cleaned);
+    await loadJots(note.id, 'note');
+    openNote(note);
+    showVoiceCmdSuccess('📝', 'Jot created');
+  }
+}
+
+async function executeCmdAppControl(payload) {
+  const action = payload.action;
+  const params = payload.params || {};
+  switch (action) {
+    case 'back':
+      if (currentNote) await showList();
+      else if (currentJotDetail) { currentJotDetail = null; jotDetailView.classList.add('hidden'); noteList.classList.remove('hidden'); loadJots(); }
+      break;
+    case 'new_note': {
+      const note = await window.api.createNote('');
+      openNote(note);
+      break;
+    }
+    case 'delete':
+      if (currentNote && currentNote.jotType !== 'trigger' && currentNote.jotType !== 'scheduled') {
+        deletedNotesStack.push({ ...currentNote });
+        await window.api.deleteNote(currentNote.id);
+        currentNote = null;
+        await showList();
+      }
+      break;
+    case 'undo':
+      if (deletedNotesStack.length > 0) {
+        const note = deletedNotesStack.pop();
+        await window.api.restoreNote(note);
+        await loadJots();
+      }
+      break;
+    case 'focus_agent':
+      showAgentPanel();
+      break;
+    case 'open_folder_view':
+      if (!folderOrganizeOpen) openFolderOrganizeView();
+      break;
+    case 'close_view':
+      if (currentNote) await showList();
+      else if (folderOrganizeOpen) closeFolderOrganizeView();
+      break;
+    case 'navigate': {
+      const dir   = params.direction === 'up' ? -1 : 1;
+      const count = Math.max(1, params.count || 1);
+      if (isListVisible()) {
+        selectedIndex = Math.max(0, Math.min(notes.length - 1, selectedIndex + dir * count));
+        updateSelectionHighlight();
+      }
+      break;
+    }
+    case 'simulate_trigger':
+      if (params.trigger) await simulateTrigger(params.trigger);
+      break;
+    default:
+      showVoiceCmdError(`Unknown action: ${action}`);
+      return;
+  }
+  showVoiceCmdSuccess('✅', `Done: ${String(action).replace(/_/g, ' ')}`);
+}
+
+function executeCmdAgent(query) {
+  showAgentPanel();
+  agentInput.value = query;
+  agentInput.focus();
+  // Submit after a short frame so the panel has time to open
+  setTimeout(() => sendAgentMessage(), 50);
+  showVoiceCmdSuccess('🤖', 'Sent to agent');
+}
+
+function showVoiceCmdSuccess(icon, text) {
+  vcmdSuccessIcon.textContent = icon;
+  vcmdSuccessText.textContent = text;
+  setVoiceCmdState('success');
+  setTimeout(() => {
+    if (!cmdMActive) setVoiceCmdState('hidden');
+  }, 2000);
+}
+
+function showVoiceCmdError(message) {
+  vcmdErrorText.textContent = message;
+  cmdMActive = false;
+  setVoiceCmdState('error');
+}
+
+function dismissVoiceCmd() {
+  cmdMActive = false;
+  cmdPendingTranscript = null;
+  if (cmdMediaRecorder && cmdMediaRecorder.state !== 'inactive') {
+    cmdMediaRecorder.stop();
+    cmdMediaRecorder.stream.getTracks().forEach((t) => t.stop());
+  }
+  cmdMediaRecorder = null;
+  cmdAudioChunks   = [];
+  setVoiceCmdState('hidden');
+}
+
+function toggleVoiceCommand() {
+  if (cmdMActive) {
+    stopVoiceCmd();                                        // recording → confirm
+  } else if (cmdPendingTranscript) {
+    sendVoiceCmd();                                        // confirm → execute
+  } else if (!voiceCmdBar.classList.contains('hidden')) {
+    dismissVoiceCmd();                                     // dismiss any other state
+  } else {
+    startVoiceCmd();                                       // start fresh
+  }
+}
+
+vcmdStopBtn.addEventListener('click', stopVoiceCmd);
+vcmdSendBtn.addEventListener('click', sendVoiceCmd);
+vcmdRedoBtn.addEventListener('click', () => { cmdPendingTranscript = null; startVoiceCmd(); });
+vcmdCloseBtn.addEventListener('click', dismissVoiceCmd);
+vcmdErrorDismissBtn.addEventListener('click', dismissVoiceCmd);
+
+window.api.onToggleVoiceCommand(toggleVoiceCommand);

@@ -81,6 +81,17 @@ async function fireReminder(reminder, db, tts, win) {
     db.deactivateReminder(reminder.id);
   }
 
+  // If reminder has note_content, create a note so the panel can show only that note
+  let noteId = null;
+  if (reminder.note_content) {
+    try {
+      const note = db.createNote(reminder.note_content);
+      noteId = note.id;
+    } catch (err) {
+      console.warn('[scheduler] Failed to create note for reminder:', err.message);
+    }
+  }
+
   // Generate TTS audio
   let audioData = null;
   try {
@@ -94,11 +105,16 @@ async function fireReminder(reminder, db, tts, win) {
 
   // Push to renderer (non-blocking — renderer may not be visible)
   if (win && !win.isDestroyed()) {
-    win.webContents.send('reminder-due', {
+    const payload = {
       id:        reminder.id,
       content:   reminder.content,
       audioData,
-    });
+    };
+    if (noteId != null) {
+      payload.noteId = noteId;
+      payload.showOnlyThisNote = true;
+    }
+    win.webContents.send('reminder-due', payload);
 
     // Show window if hidden so user sees the notification
     if (!win.isVisible()) {

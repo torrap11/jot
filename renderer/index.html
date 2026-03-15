@@ -37,9 +37,7 @@
       <div id="trigger-demo-label">Simulate context trigger:</div>
       <div id="trigger-demo-buttons">
         <button class="trigger-btn" data-trigger="netflix_open">📺 Netflix</button>
-        <button class="trigger-btn" data-trigger="linkedin_open">💼 LinkedIn</button>
-        <button class="trigger-btn" data-trigger="gmail_open">📧 Gmail</button>
-        <button class="trigger-btn" data-trigger="work_start">🖥️ Work</button>
+        <button class="trigger-btn" data-trigger="spotify_open">🎵 Spotify</button>
       </div>
     </div>
   </div>
@@ -94,15 +92,39 @@
       </div>
     </div>
 
-    <!-- Capability filter: All jots | Notes | Triggers | Scheduled -->
-    <div id="jot-type-bar">
-      <button class="jot-type-pill active" data-jot-type="all">All</button>
-      <button class="jot-type-pill" data-jot-type="notes">Notes</button>
-      <button class="jot-type-pill" data-jot-type="triggers">Triggers</button>
-      <button class="jot-type-pill" data-jot-type="scheduled">Scheduled</button>
+    <!-- Universal Voice Command bar (Cmd+M) — dictate / app control / agent -->
+    <div id="voice-cmd-bar" class="hidden">
+      <!-- State: recording -->
+      <div id="vcmd-state-recording">
+        <span class="vcmd-dot"></span>
+        <span>Recording… press Space to stop</span>
+        <button id="vcmd-stop-btn">Stop</button>
+      </div>
+      <!-- State: processing -->
+      <div id="vcmd-state-processing">
+        <span class="vcmd-spinner">⚡</span>
+        <span id="vcmd-processing-label">Processing…</span>
+      </div>
+      <!-- State: confirm — review transcript before sending -->
+      <div id="vcmd-state-confirm">
+        <span id="vcmd-transcript-text"></span>
+        <button id="vcmd-send-btn">Send ✓</button>
+        <button id="vcmd-redo-btn">🎙 Redo</button>
+        <button id="vcmd-close-btn">✕</button>
+      </div>
+      <!-- State: success (auto-dismisses after 2s) -->
+      <div id="vcmd-state-success">
+        <span id="vcmd-success-icon"></span>
+        <span id="vcmd-success-text"></span>
+      </div>
+      <!-- State: error -->
+      <div id="vcmd-state-error">
+        <span id="vcmd-error-text"></span>
+        <button id="vcmd-error-dismiss-btn">✕</button>
+      </div>
     </div>
 
-    <div id="folder-bar" class="hidden">
+<div id="folder-bar" class="hidden">
       <button class="folder-pill active" data-folder="all">All</button>
       <button class="folder-pill" data-folder="unfiled">Unfiled</button>
       <!-- dynamic folder pills injected by JS -->
