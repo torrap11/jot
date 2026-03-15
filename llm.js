@@ -1,35 +1,9 @@
 const { OpenAI } = require('openai');
-const path = require('path');
-const fs = require('fs');
-const { app } = require('electron');
-
-const OLLAMA_BASE = 'http://localhost:11434/v1';
+const { getLLMClientConfig } = require('./config');
 
 function getConfig() {
-  const envKey = process.env.EASY_JOT_OPENAI_API_KEY;
-  const useOllamaEnv = process.env.EASY_JOT_USE_OLLAMA === '1' || process.env.EASY_JOT_USE_OLLAMA === 'true';
-
-  let fileConfig = {};
-  try {
-    const configPath = path.join(app.getPath('userData'), 'config.json');
-    fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-  } catch (_) { /* file absent or malformed — ignore */ }
-
-  const useOllama = useOllamaEnv || fileConfig.useOllama === true || fileConfig.provider === 'ollama';
-
-  if (useOllama) {
-    return {
-      apiKey:  'ollama', // Ollama ignores it but OpenAI client requires it
-      model:   fileConfig.model || 'llama3.2',
-      baseURL: fileConfig.ollamaBaseURL || OLLAMA_BASE,
-    };
-  }
-
-  return {
-    apiKey:  envKey || fileConfig.openaiApiKey || null,
-    model:   fileConfig.model   || 'gpt-4o-mini',
-    baseURL: fileConfig.baseURL || undefined,
-  };
+  const { apiKey, model, baseURL } = getLLMClientConfig();
+  return { apiKey, model, baseURL };
 }
 
 const STRUCTURED_SYSTEM_PROMPT = `You are an action-planning assistant for a sticky-note app.
@@ -119,8 +93,8 @@ async function callLLM(systemPrompt, userMessage, notesContext = []) {
 
   if (!useOllama && !apiKey) {
     throw new Error(
-      'Set EASY_JOT_OPENAI_API_KEY or add openaiApiKey to config.json to use Easy Jot Agent. ' +
-      'Or use Ollama: add {"useOllama": true} to config.json and run `ollama pull llama3.2`.'
+      'No LLM configured. Add openaiApiKey to config.json, set EASY_JOT_OPENAI_API_KEY, ' +
+      'or enable Ollama with {"useOllama": true} in config.json.'
     );
   }
 
@@ -161,8 +135,8 @@ async function callLLMWithStructuredOutput(userMessage, notesContext = []) {
 
   if (!useOllama && !apiKey) {
     throw new Error(
-      'Set EASY_JOT_OPENAI_API_KEY or add openaiApiKey to config.json to use Easy Jot Agent. ' +
-      'Or use Ollama: add {"useOllama": true} to config.json.'
+      'No LLM configured. Add openaiApiKey to config.json, set EASY_JOT_OPENAI_API_KEY, ' +
+      'or enable Ollama with {"useOllama": true} in config.json.'
     );
   }
 

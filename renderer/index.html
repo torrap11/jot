@@ -3,13 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Easy Jot</title>
+  <title>Jot — Voice Memory Agent</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Agent panel (left side, hidden by default) -->
-  <div id="agent-panel" class="hidden">
-    <div id="agent-header">Easy Jot Agent</div>
+  <!-- Trigger notification overlay (floats above everything) -->
+  <div id="trigger-notification" class="hidden">
+    <div id="trigger-notification-header">
+      <span id="trigger-notification-icon"></span>
+      <span id="trigger-notification-label"></span>
+      <button id="trigger-notification-close">✕</button>
+    </div>
+    <div id="trigger-notification-memories"></div>
+  </div>
+
+  <!-- Agent panel (left side, always visible) -->
+  <div id="agent-panel">
+    <div id="agent-header">Jot Agent</div>
     <div id="agent-messages">
       <div class="agent-empty-state">
         Type a command to act on your jots.<br>
@@ -18,20 +28,78 @@
       </div>
     </div>
     <div id="agent-input-row">
-      <input id="agent-input" type="text" placeholder="Ask Easy Jot Agent…" />
+      <input id="agent-input" type="text" placeholder="Ask Jot Agent…" />
       <button id="agent-send-btn">Send</button>
+    </div>
+
+    <!-- Demo trigger buttons (context simulation for hackathon demo) -->
+    <div id="trigger-demo">
+      <div id="trigger-demo-label">Simulate context trigger:</div>
+      <div id="trigger-demo-buttons">
+        <button class="trigger-btn" data-trigger="netflix_open">📺 Netflix</button>
+        <button class="trigger-btn" data-trigger="linkedin_open">💼 LinkedIn</button>
+        <button class="trigger-btn" data-trigger="gmail_open">📧 Gmail</button>
+        <button class="trigger-btn" data-trigger="work_start">🖥️ Work</button>
+      </div>
     </div>
   </div>
 
   <!-- Main pane (right side, always visible) -->
   <div id="main-pane">
     <div id="titlebar">
-      <span id="title">Easy Jot</span>
+      <span id="title">Jot</span>
       <div id="titlebar-actions">
+        <button id="voice-btn" title="Record voice memory (Cmd+Shift+J)">🎙️</button>
         <button id="folder-btn" title="Organize folders">📁</button>
         <button id="image-btn" title="Add image">📷</button>
-        <button id="new-btn" title="New note">+</button>
+        <button id="new-btn" title="New jot">+</button>
       </div>
+    </div>
+
+    <!-- Config status bar (shown briefly on startup or on error) -->
+    <div id="config-bar" class="hidden"></div>
+
+    <!-- Voice capture bar (shown during recording / review) -->
+    <div id="voice-bar" class="hidden">
+      <!-- State: recording -->
+      <div id="voice-state-recording" class="hidden">
+        <span class="voice-recording-dot"></span>
+        <span>Listening…</span>
+        <button id="voice-stop-btn">Stop</button>
+      </div>
+      <!-- State: processing -->
+      <div id="voice-state-processing" class="hidden">
+        <span class="voice-spinner">✨</span>
+        <span id="voice-processing-label">Transcribing…</span>
+      </div>
+      <!-- State: review -->
+      <div id="voice-state-review" class="hidden">
+        <div class="voice-review-body">
+          <div id="voice-transcript-text"></div>
+          <span class="stt-badge"></span>
+        </div>
+        <div id="voice-review-actions">
+          <button id="voice-save-btn">Save Memory</button>
+          <button id="voice-dismiss-btn">Dismiss</button>
+        </div>
+      </div>
+      <!-- State: success -->
+      <div id="voice-state-success" class="hidden">
+        <span>✅ Memory saved!</span>
+      </div>
+      <!-- State: error -->
+      <div id="voice-state-error" class="hidden">
+        <span id="voice-error-text"></span>
+        <button id="voice-error-dismiss-btn">✕</button>
+      </div>
+    </div>
+
+    <!-- Capability filter: All jots | Notes | Triggers | Scheduled -->
+    <div id="jot-type-bar">
+      <button class="jot-type-pill active" data-jot-type="all">All</button>
+      <button class="jot-type-pill" data-jot-type="notes">Notes</button>
+      <button class="jot-type-pill" data-jot-type="triggers">Triggers</button>
+      <button class="jot-type-pill" data-jot-type="scheduled">Scheduled</button>
     </div>
 
     <div id="folder-bar" class="hidden">
@@ -57,7 +125,7 @@
     </div>
 
     <div id="editor" class="hidden">
-      <textarea id="content" placeholder="Write something..."></textarea>
+      <textarea id="content" placeholder="Write something… (note, reminder, or “when I open X…” — the app will figure it out)"></textarea>
       <div id="image-display" class="hidden"></div>
       <div id="editor-actions">
         <button id="back-btn">Back</button>
@@ -65,6 +133,27 @@
         <button id="delete-btn">Delete</button>
       </div>
     </div>
+
+    <!-- Jot detail view for trigger/scheduled (non-note jots) -->
+    <div id="jot-detail-view" class="hidden">
+      <div id="jot-detail-header">
+        <span id="jot-detail-badge"></span>
+        <span id="jot-detail-meta"></span>
+        <button id="jot-detail-back">Back</button>
+      </div>
+      <div id="jot-detail-content"></div>
+      <div id="jot-detail-actions"></div>
+    </div>
+
+  </div>
+
+  <!-- Reminder notification overlay (warm amber, distinct from dark trigger notification) -->
+  <div id="reminder-notification" class="hidden">
+    <div id="reminder-notification-header">
+      <span>⏰ Reminder</span>
+      <button id="reminder-notification-close">✕</button>
+    </div>
+    <div id="reminder-notification-content"></div>
   </div>
 
   <script src="renderer.js"></script>

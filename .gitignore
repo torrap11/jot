@@ -1,5 +1,23 @@
+# Dependencies
 node_modules/
+
+# macOS
 .DS_Store
+
+# SQLite (database files live in userData, not the repo)
 *.db
+*.db-shm
+*.db-wal
+
+# Logs
 *.log
+npm-debug.log*
+
+# Secrets — never commit API keys
+config.json
+
+# Editor / tool artifacts
 .claude/
+.vscode/
+*.swp
+*.swo

@@ -1,6 +1,9 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, dialog } = require('electron');
+const {
+  app, BrowserWindow, globalShortcut, ipcMain,
+  screen, dialog, systemPreferences,
+} = require('electron');
 const path = require('path');
-const fs = require('fs');
+const fs   = require('fs');
 const keybinds = require('./keybinds');
 
 let win;
@@ -29,56 +32,84 @@ function createWindow() {
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
-  win.on('closed', () => {
-    win = null;
+  win.on('closed', () => { win = null; });
+
+  // Allow getUserMedia (microphone) from renderer
+  win.webContents.session.setPermissionRequestHandler((_wc, permission, cb) => {
+    cb(permission === 'media');
   });
 }
 
 function toggleWindow() {
-  if (!win) {
-    createWindow();
-    win.show();
-    return;
-  }
+  if (!win) { createWindow(); win.show(); return; }
+  if (win.isVisible()) { win.hide(); } else { win.show(); win.focus(); }
+}
+
+// ── Send a toggle-voice-capture event to renderer ─────────────────────────
+function sendToggleVoice() {
+  if (!win) return;
   if (win.isVisible()) {
-    win.hide();
+    win.webContents.send('toggle-voice-capture');
   } else {
     win.show();
     win.focus();
+    win.webContents.send('toggle-voice-capture');
   }
 }
 
 app.whenReady().then(() => {
-  const db = require('./database');
-  const llm = require('./llm');
-  const executor = require('./intelligence/executor');
+  const db          = require('./database');
+  const llm         = require('./llm');
+  const executor    = require('./intelligence/executor');
+  const voice       = require('./voice');
+  const tts         = require('./tts');
+  const { parseIntent }                             = require('./intentParser');
+  const { normalizeTrigger, getTriggerLabel, getTriggerIcon } = require('./triggerEngine');
+  const { getConfig }                               = require('./config');
+  const { startScheduler, fireById }                = require('./scheduler');
+  const { parseReminderNL }                         = require('./reminderParser');
 
   createWindow();
 
-  globalShortcut.register('Command+E', toggleWindow);
+  // Start the reminder scheduler (polls every 30s)
+  startScheduler({
+    getDb:  () => db,
+    getTts: () => tts,
+    getWin: () => win,
+  });
 
-  ipcMain.handle('get-notes', () => db.getAllNotes());
-  ipcMain.handle('create-note', (_e, content) => db.createNote(content));
-  ipcMain.handle('update-note', (_e, id, content) => db.updateNote(id, content));
-  ipcMain.handle('delete-note', (_e, id) => db.deleteNote(id));
-  ipcMain.handle('restore-note', (_e, note) => db.restoreNote(note));
-  ipcMain.handle('create-folder',       (_e, name, description) => db.createFolder(name, description));
-  ipcMain.handle('update-folder',       (_e, id, name, description) => db.updateFolder(id, name, description));
-  ipcMain.handle('get-folders',         ()                     => db.getAllFolders());
-  ipcMain.handle('update-note-folder',  (_e, noteId, folderId) => db.updateNoteFolder(noteId, folderId));
-  ipcMain.handle('get-notes-by-folder', (_e, folderId)         => db.getNotesByFolder(folderId));
+  // macOS: request microphone access upfront so the permission prompt appears
+  // before the user tries to record (better UX than prompting mid-flow).
+  if (process.platform === 'darwin') {
+    systemPreferences.askForMediaAccess('microphone').catch(() => {});
+  }
+
+  // ── Global hotkeys ──────────────────────────────────────────────────────
+  globalShortcut.register('Command+E',         toggleWindow);
+  globalShortcut.register('Command+Shift+J',   sendToggleVoice);
+
+  // ── Note & folder handlers ──────────────────────────────────────────────
+  ipcMain.handle('get-notes',          ()                     => db.getAllNotes());
+  ipcMain.handle('create-note',        (_e, content)          => db.createNote(content));
+  ipcMain.handle('update-note',        (_e, id, content)      => db.updateNote(id, content));
+  ipcMain.handle('delete-note',        (_e, id)               => db.deleteNote(id));
+  ipcMain.handle('restore-note',       (_e, note)             => db.restoreNote(note));
+  ipcMain.handle('create-folder',      (_e, name, desc)       => db.createFolder(name, desc));
+  ipcMain.handle('update-folder',      (_e, id, name, desc)   => db.updateFolder(id, name, desc));
+  ipcMain.handle('get-folders',        ()                     => db.getAllFolders());
+  ipcMain.handle('update-note-folder', (_e, noteId, folderId) => db.updateNoteFolder(noteId, folderId));
+  ipcMain.handle('get-notes-by-folder',(_e, folderId)         => db.getNotesByFolder(folderId));
+
+  // ── Agent handlers ──────────────────────────────────────────────────────
   const AGENT_SYSTEM_PROMPT =
-    'You are Easy Jot Agent, an AI assistant embedded in a sticky-note app. ' +
+    'You are Jot Agent, an AI assistant embedded in a voice-memory sticky-note app. ' +
     'Help the user understand, search, and act on their notes. ' +
     'Be concise and actionable. When referencing a note, use [Note ID] format.';
 
   ipcMain.handle('intelligence-query', async (_e, { userMessage, notes }) => {
     try {
-      const response = await llm.callLLM(AGENT_SYSTEM_PROMPT, userMessage, notes);
-      return { response };
-    } catch (err) {
-      return { error: err.message };
-    }
+      return { response: await llm.callLLM(AGENT_SYSTEM_PROMPT, userMessage, notes) };
+    } catch (err) { return { error: err.message }; }
   });
 
   ipcMain.handle('intelligence-execute', async (_e, actions) => {
@@ -87,11 +118,8 @@ app.whenReady().then(() => {
 
   ipcMain.handle('intelligence-query-structured', async (_e, { userMessage, notes }) => {
     try {
-      const actions = await llm.callLLMWithStructuredOutput(userMessage, notes);
-      return { actions };
-    } catch (err) {
-      return { error: err.message };
-    }
+      return { actions: await llm.callLLMWithStructuredOutput(userMessage, notes) };
+    } catch (err) { return { error: err.message }; }
   });
 
   ipcMain.handle('intelligence-query-help', async (_e, { userMessage }) => {
@@ -99,50 +127,180 @@ app.whenReady().then(() => {
       const shortcuts = [...keybinds.global, ...keybinds.inApp]
         .map(s => `- ${s.keys}: ${s.action}`)
         .join('\n');
-      const systemPrompt =
-        AGENT_SYSTEM_PROMPT +
-        ' You can also answer questions about keyboard shortcuts. Here are the shortcuts:\n' +
-        shortcuts;
-      const response = await llm.callLLM(systemPrompt, userMessage, []);
-      return { response };
-    } catch (err) {
-      return { error: err.message };
+      const sys = AGENT_SYSTEM_PROMPT +
+        '\nKeyboard shortcuts:\n' + shortcuts;
+      return { response: await llm.callLLM(sys, userMessage, []) };
+    } catch (err) { return { error: err.message }; }
+  });
+
+  // ── Window resize ───────────────────────────────────────────────────────
+  ipcMain.handle('resize-window', (_e, panelOpen) => {
+    if (!win) return;
+    const { width: sw } = screen.getPrimaryDisplay().workAreaSize;
+    if (panelOpen) {
+      win.setBounds({ x: sw - 620, width: 600 }, true);
+    } else {
+      win.setBounds({ x: sw - 340, width: 320 }, true);
     }
   });
 
-  ipcMain.handle('resize-window', (_e, panelOpen) => {
-    if (!win) return;
-    const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize;
-    if (panelOpen) {
-      win.setBounds({ x: screenWidth - 620, width: 600 }, true);
-    } else {
-      win.setBounds({ x: screenWidth - 340, width: 320 }, true);
-    }
-  });
+  // ── Image note ──────────────────────────────────────────────────────────
   ipcMain.handle('create-note-from-image', async () => {
     const result = await dialog.showOpenDialog(BrowserWindow.getFocusedWindow() || win, {
       properties: ['openFile'],
       filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
     });
     if (result.canceled || result.filePaths.length === 0) return null;
-    const filePath = result.filePaths[0];
-    const ext = path.extname(filePath).toLowerCase().slice(1);
+    const fp  = result.filePaths[0];
+    const ext = path.extname(fp).toLowerCase().slice(1);
     const mime = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }[ext] || 'image/png';
-    const buffer = fs.readFileSync(filePath);
-    const base64 = buffer.toString('base64');
-    const dataUrl = `data:${mime};base64,${base64}`;
-    return db.createNote(dataUrl);
+    const b64  = fs.readFileSync(fp).toString('base64');
+    return db.createNote(`data:${mime};base64,${b64}`);
+  });
+
+  // ── Voice & Intent Memory ───────────────────────────────────────────────
+
+  // Transcribe raw audio buffer from renderer's MediaRecorder
+  ipcMain.handle('transcribe-audio', async (_e, arrayBuffer) => {
+    try {
+      const buf = Buffer.from(arrayBuffer);
+      const result = await voice.transcribeAudio(buf);
+      return { transcript: result.transcript, words: result.words, provider: result.provider };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  // Parse transcript text into structured intent
+  ipcMain.handle('parse-intent', async (_e, transcript) => {
+    try {
+      return { intent: await parseIntent(transcript) };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  // Persist intent memory + optionally generate TTS confirmation
+  ipcMain.handle('save-intent-memory', async (_e, { content, trigger, category }) => {
+    try {
+      const mem = db.createIntentMemory({ content, trigger, category });
+
+      // TTS confirmation (non-blocking – if it fails, the save still succeeds)
+      let audioData = null;
+      try {
+        const wavBuf = await tts.speakSaveConfirmation({ trigger, content });
+        if (wavBuf) audioData = wavBuf.buffer.slice(wavBuf.byteOffset, wavBuf.byteOffset + wavBuf.byteLength);
+      } catch (ttsErr) {
+        console.warn('[tts] save confirmation failed:', ttsErr.message);
+      }
+
+      return { memory: mem, audioData };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  // Simulate a context trigger → return matching memories + TTS read-out
+  ipcMain.handle('simulate-trigger', async (_e, triggerInput) => {
+    try {
+      const triggerId = normalizeTrigger(triggerInput);
+      const label     = getTriggerLabel(triggerId);
+      const icon      = getTriggerIcon(triggerId);
+      const memories  = db.getIntentMemoriesByTrigger(triggerId);
+
+      // TTS read-out (optional)
+      let audioData = null;
+      try {
+        const wavBuf = await tts.speakTriggerReadout(label, memories);
+        if (wavBuf) audioData = wavBuf.buffer.slice(wavBuf.byteOffset, wavBuf.byteOffset + wavBuf.byteLength);
+      } catch (ttsErr) {
+        console.warn('[tts] trigger readout failed:', ttsErr.message);
+      }
+
+      return { trigger: triggerId, label, icon, memories, audioData };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  // Return all stored intent memories
+  ipcMain.handle('get-intent-memories', () => {
+    try { return db.getAllIntentMemories(); }
+    catch { return []; }
+  });
+
+  // Delete a single intent memory
+  ipcMain.handle('delete-intent-memory', (_e, id) => {
+    try { db.deleteIntentMemory(id); return { ok: true }; }
+    catch (err) { return { error: err.message }; }
+  });
+
+  // Expose current config status to renderer (no secrets)
+  ipcMain.handle('get-config-status', () => {
+    const cfg = getConfig();
+    return {
+      hasOpenAI:    !!cfg.openaiApiKey,
+      hasSmallest:  !!cfg.smallestAiKey,
+      useOllama:    cfg.useOllama,
+      model:        cfg.model,
+      sttProvider:  cfg.smallestAiKey ? 'pulse' : cfg.openaiApiKey ? 'whisper' : null,
+      ttsEnabled:   !!cfg.smallestAiKey,
+    };
+  });
+
+  // ── Scheduled Reminders ─────────────────────────────────────────────────
+
+  ipcMain.handle('create-scheduled-reminder', (_e, { content, scheduleType, scheduledTime }) => {
+    try {
+      return { reminder: db.createScheduledReminder({ content, scheduleType, scheduledTime }) };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  ipcMain.handle('get-scheduled-reminders', () => {
+    try { return db.getAllScheduledReminders(); }
+    catch { return []; }
+  });
+
+  ipcMain.handle('delete-scheduled-reminder', (_e, id) => {
+    try { db.deleteScheduledReminder(id); return { ok: true }; }
+    catch (err) { return { error: err.message }; }
+  });
+
+  ipcMain.handle('toggle-scheduled-reminder', (_e, id) => {
+    try {
+      const reminders = db.getAllScheduledReminders();
+      const reminder = reminders.find(r => r.id === id);
+      if (!reminder) return { error: 'Reminder not found' };
+      if (reminder.active) {
+        db.deactivateReminder(id);
+      } else {
+        db.activateReminder(id);
+      }
+      return { ok: true, active: !reminder.active };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+
+  // Manual test fire (for "Test ▶" button in UI)
+  ipcMain.handle('fire-reminder', async (_e, id) => {
+    try {
+      const audioData = await fireById(id, db, tts);
+      // Also push reminder-due event to renderer so notification shows
+      const reminders = db.getAllScheduledReminders();
+      const reminder = reminders.find(r => r.id === id);
+      if (reminder && win && !win.isDestroyed()) {
+        win.webContents.send('reminder-due', { id, content: reminder.content, audioData });
+      }
+      return { ok: true, audioData };
+    } catch (err) {
+      return { error: err.message };
+    }
   });
 });
 
-app.on('will-quit', () => {
-  globalShortcut.unregisterAll();
-});
-
-app.on('window-all-closed', (e) => {
-  e.preventDefault();
-});
-
-if (app.dock) {
-  app.dock.hide();
-}
+app.on('will-quit', () => { globalShortcut.unregisterAll(); });
+app.on('window-all-closed', (e) => { e.preventDefault(); });
+if (app.dock) app.dock.hide();

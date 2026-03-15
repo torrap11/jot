@@ -34,6 +34,33 @@ function getDb() {
   if (!cols.includes('folder_id')) {
     db.exec('ALTER TABLE notes ADD COLUMN folder_id INTEGER REFERENCES folders(id)');
   }
+
+  // Intent memories table for voice-triggered context memory
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS intent_memories (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      content    TEXT NOT NULL,
+      trigger    TEXT NOT NULL DEFAULT 'general',
+      category   TEXT NOT NULL DEFAULT 'other',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      note_id    INTEGER,
+      embedding  TEXT
+    )
+  `);
+
+  // Scheduled reminders table for time-based spoken reminders
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scheduled_reminders (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      content           TEXT NOT NULL,
+      schedule_type     TEXT NOT NULL DEFAULT 'once',
+      scheduled_time    TEXT NOT NULL,
+      active            INTEGER NOT NULL DEFAULT 1,
+      last_triggered_at TEXT,
+      created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
   return db;
 }
 
@@ -97,7 +124,102 @@ function getNotesByFolder(folderId) {
   return getAllNotes(folderId);
 }
 
+// ── Intent Memory helpers ──────────────────────────────────────────────────
+
+/**
+ * Persist a structured intent memory.
+ * @param {{ content: string, trigger: string, category: string, note_id?: number }} data
+ */
+function createIntentMemory({ content, trigger = 'general', category = 'other', note_id = null }) {
+  const stmt = getDb().prepare(
+    'INSERT INTO intent_memories (content, trigger, category, note_id) VALUES (?, ?, ?, ?)'
+  );
+  const result = stmt.run(content, trigger, category, note_id);
+  return getDb().prepare('SELECT * FROM intent_memories WHERE id = ?').get(result.lastInsertRowid);
+}
+
+/**
+ * Retrieve all memories that match a given trigger ID.
+ * @param {string} trigger
+ */
+function getIntentMemoriesByTrigger(trigger) {
+  return getDb()
+    .prepare('SELECT * FROM intent_memories WHERE trigger = ? ORDER BY created_at DESC')
+    .all(trigger);
+}
+
+/**
+ * Full-text search across all memory content (case-insensitive).
+ * @param {string} query
+ */
+function searchIntentMemories(query) {
+  const q = `%${(query || '').toLowerCase()}%`;
+  return getDb()
+    .prepare('SELECT * FROM intent_memories WHERE lower(content) LIKE ? ORDER BY created_at DESC')
+    .all(q);
+}
+
+/** Return all intent memories, newest first. */
+function getAllIntentMemories() {
+  return getDb().prepare('SELECT * FROM intent_memories ORDER BY created_at DESC').all();
+}
+
+/** Delete a single intent memory by id. */
+function deleteIntentMemory(id) {
+  getDb().prepare('DELETE FROM intent_memories WHERE id = ?').run(id);
+}
+
+// ── Scheduled Reminder helpers ─────────────────────────────────────────────
+
+/**
+ * Create a new scheduled reminder.
+ * @param {{ content: string, scheduleType: 'once'|'daily', scheduledTime: string }} data
+ */
+function createScheduledReminder({ content, scheduleType = 'once', scheduledTime }) {
+  const stmt = getDb().prepare(
+    'INSERT INTO scheduled_reminders (content, schedule_type, scheduled_time) VALUES (?, ?, ?)'
+  );
+  const result = stmt.run(content, scheduleType, scheduledTime);
+  return getDb().prepare('SELECT * FROM scheduled_reminders WHERE id = ?').get(result.lastInsertRowid);
+}
+
+/** Return all active reminders (active = 1). */
+function getActiveReminders() {
+  return getDb().prepare('SELECT * FROM scheduled_reminders WHERE active = 1').all();
+}
+
+/** Return all reminders, newest first. */
+function getAllScheduledReminders() {
+  return getDb().prepare('SELECT * FROM scheduled_reminders ORDER BY created_at DESC').all();
+}
+
+/** Delete a scheduled reminder by id. */
+function deleteScheduledReminder(id) {
+  getDb().prepare('DELETE FROM scheduled_reminders WHERE id = ?').run(id);
+}
+
+/** Mark a reminder as triggered (set last_triggered_at to now). */
+function markReminderTriggered(id) {
+  getDb()
+    .prepare("UPDATE scheduled_reminders SET last_triggered_at = datetime('now') WHERE id = ?")
+    .run(id);
+}
+
+/** Deactivate a reminder (active = 0). Used for stale once-reminders. */
+function deactivateReminder(id) {
+  getDb().prepare('UPDATE scheduled_reminders SET active = 0 WHERE id = ?').run(id);
+}
+
+/** Reactivate a reminder (active = 1). */
+function activateReminder(id) {
+  getDb().prepare('UPDATE scheduled_reminders SET active = 1 WHERE id = ?').run(id);
+}
+
 module.exports = {
   getAllNotes, createNote, updateNote, deleteNote, restoreNote,
   createFolder, updateFolder, getAllFolders, updateNoteFolder, getNotesByFolder,
+  createIntentMemory, getIntentMemoriesByTrigger, searchIntentMemories,
+  getAllIntentMemories, deleteIntentMemory,
+  createScheduledReminder, getActiveReminders, getAllScheduledReminders,
+  deleteScheduledReminder, markReminderTriggered, deactivateReminder, activateReminder,
 };

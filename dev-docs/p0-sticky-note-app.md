@@ -1,7 +1,9 @@
 # P0: Easy Jot — Sticky Note Desktop App
 
+> **Note**: This is the original P0 spec. The app has evolved: global hotkey is now **Cmd+E**; folders, AI agent, and keybind help have been added. See README.md and PROJECT_CONTEXT.md for current documentation.
+
 ## Context
-Build a macOS desktop app triggered by a global hotkey (Ctrl+Opt+Cmd+J) that shows a floating sticky-note window for quick note-taking, backed by SQLite.
+Build a macOS desktop app triggered by a global hotkey that shows a floating sticky-note window for quick note-taking, backed by SQLite.
 
 ## Tech Stack
 - **Electron** — built-in `globalShortcut` API, `BrowserWindow` for the floating note UI
@@ -35,7 +37,7 @@ easy-jot/
 
 ### 3. Main process (`main.js`)
 - Create a frameless, always-on-top `BrowserWindow` (~300x250px)
-- Register global shortcut `Control+Option+Command+J` to toggle visibility
+- Register global shortcut `Command+E` to toggle visibility
 - Set up IPC handlers for CRUD operations (calling `database.js`)
 - Position window near top-right of screen
 - Hide from dock when window is hidden
@@ -55,7 +57,7 @@ easy-jot/
 
 ## Verification
 1. Run `npm start` — app should launch with no visible window
-2. Press Ctrl+Opt+Cmd+J — floating sticky note window appears
+2. Press Cmd+E — floating sticky note window appears
 3. Type a note, click save — note persists
 4. Press hotkey again — window hides
 5. Press hotkey — window reappears with saved note

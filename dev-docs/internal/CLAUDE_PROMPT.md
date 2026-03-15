@@ -1,5 +1,7 @@
 # One-Shot Prompt: Easy Jot — Sticky Note Desktop App
 
+> **Historical**: Original build spec. The app now uses **Cmd+E** as the global hotkey (not Control+Option+Command+J). See README.md for current usage.
+
 Use this prompt with Claude Code to build the Easy Jot application:
 
 ---

@@ -1,5 +1,7 @@
 # One-Shot Prompt: Add Keyboard Shortcuts to Easy Jot
 
+> **Historical**: This added Cmd+N, Cmd+S, Cmd+E (in-app). The global hotkey is now Cmd+E (main.js). All shortcuts are centralized in `keybinds.js`. See README.md for the full list.
+
 Use this prompt with Claude Code to add the keyboard shortcuts in one shot:
 
 ---
