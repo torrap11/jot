@@ -1,66 +1,48 @@
 'use strict';
 
-/**
- * surfaceEngine.js — Matches frontmost app to linked notes and decides what to surface.
- *
- * When the frontmost app changes:
- *   1. Query notes linked to the new bundle ID (or by stable app name fallback).
- *   2. Filter out notes that are snoozed or permanently disabled.
- *   3. Return eligible notes to be shown in the overlay.
- *   4. After surfacing, auto-snooze each note for cooldownMinutes.
- *
- * No external I/O — pure logic over DB helpers.
- * Note: queries include links from BOTH 'manual' and 'auto' sources.
- */
+/** Chooses notes to surface for a frontmost app: explicit links + keyword matches on note text. */
 
 const { APP_NAME_TO_BUNDLE_ID } = require('./knownApps');
+const { aliasesForApp } = require('./noteAppScan');
 
-/**
- * Resolve canonical bundle IDs to query for a given frontmost app event.
- * Returns an array because the app name fallback may add a second candidate.
- */
-function resolveBundleIds(bundleId, appName) {
-  const ids = new Set();
-  if (bundleId) ids.add(bundleId);
-  // App-name fallback: exact match first, then case-insensitive.
+function resolveAppKey(bundleId, appName) {
+  if (bundleId) return bundleId;
+  if (appName && APP_NAME_TO_BUNDLE_ID[appName]) return APP_NAME_TO_BUNDLE_ID[appName];
   if (appName) {
-    const exact = APP_NAME_TO_BUNDLE_ID[appName];
-    if (exact) {
-      ids.add(exact);
-    } else {
-      // Case-insensitive fallback in case System Events returns differently-cased names
-      const lower = appName.toLowerCase();
-      for (const [key, val] of Object.entries(APP_NAME_TO_BUNDLE_ID)) {
-        if (key.toLowerCase() === lower) { ids.add(val); break; }
-      }
+    const lower = appName.toLowerCase();
+    for (const [name, id] of Object.entries(APP_NAME_TO_BUNDLE_ID)) {
+      if (name.toLowerCase() === lower) return id;
     }
   }
-  return [...ids];
+  return '';
 }
 
-/**
- * Find notes eligible for surfacing when the given app becomes frontmost.
- *
- * @param {string} bundleId  - Bundle ID from System Events (may be empty).
- * @param {string} appName   - Process display name.
- * @param {object} db        - database.js module.
- * @returns {Array}          - Array of note objects eligible for surfacing.
- */
-function getEligibleNotes(bundleId, appName, db) {
-  const ids = resolveBundleIds(bundleId, appName);
-  if (ids.length === 0) return [];
+function pickSurfacedNotes({ bundleId, appName, db, catalog, limit = 3 }) {
+  const appKey = resolveAppKey(bundleId, appName);
+  if (!appKey) return { appKey: '', notes: [] };
 
-  const candidates = db.getNotesByAnyBundleId(ids);
-  return candidates.filter(n => db.noteEligibleForSurface(n));
-}
+  const linked = db.getNotesLinkedToApp(appKey, 80).map((n) => ({ ...n, sourceRank: 2 }));
+  const keywordAliases = aliasesForApp(appKey, catalog);
+  const keywordMatches = db.getKeywordCandidates(keywordAliases, 80).map((n) => ({ ...n, sourceRank: 1 }));
 
-/**
- * After surfacing a set of notes, auto-snooze each for cooldownMinutes.
- */
-function recordSurfaced(notes, db, cooldownMinutes) {
-  for (const note of notes) {
-    db.markNoteSurfaced(note.id, cooldownMinutes);
+  const merged = new Map();
+  [...linked, ...keywordMatches].forEach((note) => {
+    const existing = merged.get(note.id);
+    if (!existing || note.sourceRank > existing.sourceRank) merged.set(note.id, note);
+  });
+
+  const filtered = [...merged.values()]
+    .filter((note) => db.canSurfaceNote(note.id, appKey))
+    .sort((a, b) => {
+      if (b.sourceRank !== a.sourceRank) return b.sourceRank - a.sourceRank;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    })
+    .slice(0, limit);
+
+  for (const note of filtered) {
+    db.recordSurfaced(note.id, appKey);
   }
+  return { appKey, notes: filtered };
 }
 
-module.exports = { resolveBundleIds, getEligibleNotes, recordSurfaced };
+module.exports = { resolveAppKey, pickSurfacedNotes };

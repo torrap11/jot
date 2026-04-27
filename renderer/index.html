@@ -3,197 +3,39 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
-  <title>Proactive Recall</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'" />
+  <title>Proactive Recall Search</title>
   <link rel="stylesheet" href="style.css" />
 </head>
-<body>
-<div id="app">
-
-  <!-- Sidebar -->
-  <aside id="sidebar">
-    <div id="sidebar-header">
-      <h1>Proactive Recall</h1>
+<body class="search-body">
+  <main class="search-shell">
+    <input id="query" type="search" placeholder="Search notes..." autofocus />
+    <div id="bulk-actions" class="bulk-actions hidden">
+      <span id="selected-count">0 selected</span>
+      <button id="delete-selected-btn" type="button" class="btn-danger">Delete selected</button>
     </div>
-    <div id="sidebar-folders">
-      <div class="folder-section-label">Library</div>
-      <div class="folder-item active" data-folder="all">
-        <span class="folder-icon">📄</span>
-        <span class="folder-name">All Notes</span>
-      </div>
-      <div class="folder-item" data-folder="unfiled">
-        <span class="folder-icon">📥</span>
-        <span class="folder-name">Unfiled</span>
-      </div>
-      <div class="folder-item" data-folder="trash">
-        <span class="folder-icon">🗑</span>
-        <span class="folder-name">Recently deleted</span>
-      </div>
-      <div class="folder-section-label">Folders</div>
-      <div id="folder-list"></div>
-      <button id="new-folder-btn" title="New folder (⌘⇧N)">＋ New folder</button>
-    </div>
-    <div id="sidebar-bottom">
-      <button id="settings-btn">⚙ Settings</button>
-    </div>
-  </aside>
-
-  <!-- Notes list -->
-  <section id="notes-panel">
-    <div id="notes-panel-header">
-      <div id="notes-panel-title-row">
-        <span id="notes-panel-title">All Notes</span>
-        <button id="new-note-btn" title="New note (⌘N)">＋</button>
-      </div>
-      <input id="search-input" type="search" placeholder="Search notes… (⌘⇧F)" />
-    </div>
-    <div id="notes-list">
-      <div id="notes-empty">No notes yet.<br><small>Click ＋ or press ⌘N to create one.</small></div>
-    </div>
-  </section>
-
-  <!-- Editor -->
-  <main id="editor-panel">
-    <div id="editor-panel-bar">
-      <span class="toolbar-sep"></span>
-      <button type="button" class="toolbar-btn" id="toggle-ai-btn" title="Toggle AI assistant (⌘⇧A)">✦ AI</button>
-    </div>
-    <div id="editor-body">
-    <div id="editor-placeholder">
-      <div class="ph-icon">📝</div>
-      <div class="ph-text">Select or create a note</div>
-      <div class="ph-hint">⌘N — new note &nbsp;·&nbsp; ⌘⇧N — new folder &nbsp;·&nbsp; ⌘⇧F — search &nbsp;·&nbsp; ⌘⇧A — AI &nbsp;·&nbsp; Esc — save &amp; close note &nbsp;·&nbsp; ↑↓ — list</div>
-    </div>
-
-    <div id="editor-content" style="display:none">
-      <div id="editor-trash-banner" class="hidden">
-        <span>Recently deleted</span>
-        <button type="button" class="toolbar-btn small" id="restore-note-btn">Restore</button>
-        <button type="button" class="toolbar-btn small danger" id="erase-note-btn">Delete forever…</button>
-      </div>
-      <div id="editor-toolbar">
-        <span id="note-status" style="font-size:11px;color:var(--text-faint)"></span>
-        <span class="toolbar-sep"></span>
-        <button type="button" class="toolbar-btn" id="delete-note-btn" title="Move to Recently deleted">🗑</button>
-      </div>
-
-      <input id="note-title-input" type="text" placeholder="Note title…" autocomplete="off" spellcheck="false" />
-      <textarea id="note-content-input" placeholder="Start writing…" spellcheck="false"></textarea>
-
-      <div id="app-links-panel">
-        <div id="app-links-title">
-          <span>🔗 Surface when app is active</span>
-          <button id="add-app-link-btn">＋ Add app</button>
+    <div id="results"></div>
+    <section id="editor" class="hidden">
+      <div class="editor-meta">
+        <span id="editor-date"></span>
+        <div class="editor-actions">
+          <button id="copy-note-btn" type="button">Copy</button>
+          <button id="delete-note-btn" type="button" class="btn-danger" title="Delete note">Delete…</button>
         </div>
-        <div id="app-links-body"></div>
       </div>
-    </div>
-    </div><!-- /#editor-body -->
+      <textarea id="editor-text"></textarea>
+      <div class="link-row">
+        <input
+          id="app-select"
+          type="text"
+          placeholder="Link to app..."
+          aria-label="Link note to app"
+        />
+        <button id="link-btn" type="button">Link</button>
+      </div>
+      <div id="links"></div>
+    </section>
   </main>
-
-  <!-- AI panel (default open; use ✦ AI or ⌘⇧A to collapse) -->
-  <aside id="ai-panel">
-    <div id="ai-header">
-      <h2>✦ AI Assistant</h2>
-      <button id="ai-close-btn" title="Close">×</button>
-    </div>
-    <div id="ai-messages">
-      <div class="ai-msg assistant">Hi! I can help you search, organize, and manage your notes. What would you like to do?
-
-Type /help for keyboard shortcuts.</div>
-    </div>
-    <div id="ai-input-row">
-      <textarea id="ai-input" rows="1" placeholder="Ask anything about your notes…"></textarea>
-      <button id="ai-send-btn" title="Send (⌘↵)">↑</button>
-    </div>
-  </aside>
-
-</div><!-- /#app -->
-
-<!-- Settings overlay -->
-<div id="settings-overlay" class="hidden">
-  <div id="settings-panel">
-    <h2>⚙ Settings</h2>
-
-    <div class="settings-group">
-      <div class="settings-label">Anthropic API Key</div>
-      <input id="api-key-input" type="password" class="settings-input" placeholder="sk-ant-…" />
-      <div class="settings-desc">Used for the AI assistant. Stored locally.</div>
-      <button class="settings-btn" id="save-api-key-btn" style="margin-top:8px">Save API Key</button>
-    </div>
-
-    <div class="settings-group">
-      <div class="settings-label">AI Model</div>
-      <input id="model-input" type="text" class="settings-input" value="claude-sonnet-4-6" />
-      <div class="settings-desc">Anthropic model ID.</div>
-    </div>
-
-    <div class="settings-group">
-      <div class="settings-row">
-        <div>
-          <div class="settings-label">Proactive Surfacing</div>
-          <div class="settings-desc">Surface linked notes when you switch apps.</div>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" id="surfacing-toggle" checked />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-    </div>
-
-    <div class="settings-group">
-      <div class="settings-row">
-        <div>
-          <div class="settings-label">Auto-suggest app links from note text</div>
-          <div class="settings-desc">Automatically link notes to apps when keywords like "Slack" or "WhatsApp" appear in the text. You can always dismiss individual auto-suggestions.</div>
-        </div>
-        <label class="toggle">
-          <input type="checkbox" id="auto-link-toggle" checked />
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-    </div>
-
-    <div class="settings-group">
-      <div class="settings-label">Cooldown (minutes)</div>
-      <input id="cooldown-input" type="number" class="settings-input" min="1" max="1440" value="30" />
-      <div class="settings-desc">Minimum time between re-surfacing the same note.</div>
-    </div>
-
-    <button class="settings-btn" id="save-settings-btn">Save Settings</button>
-    <button class="settings-btn secondary" id="close-settings-btn" style="margin-top:8px">Close</button>
-  </div>
-</div>
-
-<!-- Add app link modal -->
-<div id="add-link-modal" class="hidden">
-  <div id="add-link-panel">
-    <h3>Link note to app</h3>
-    <p style="font-size:11px;color:var(--text-dim);margin-bottom:12px">This note will be surfaced when you switch to the selected app.</p>
-    <div id="known-apps-list"></div>
-    <hr class="modal-divider" />
-    <div class="settings-label">Custom bundle ID</div>
-    <input id="custom-bundle-input" type="text" class="settings-input" placeholder="com.example.App" style="margin-bottom:8px" />
-    <div class="modal-actions">
-      <button class="modal-btn cancel" id="close-link-modal-btn">Cancel</button>
-      <button class="modal-btn primary" id="add-custom-link-btn">Add</button>
-    </div>
-  </div>
-</div>
-
-<!-- New folder modal -->
-<div id="new-folder-modal" class="hidden">
-  <div id="new-folder-panel">
-    <h3>New Folder</h3>
-    <input id="new-folder-name" type="text" class="settings-input" placeholder="Folder name…" style="margin-bottom:12px" />
-    <div class="modal-actions">
-      <button class="modal-btn cancel" id="close-folder-modal-btn">Cancel</button>
-      <button class="modal-btn primary" id="create-folder-confirm-btn">Create</button>
-    </div>
-  </div>
-</div>
-
-<script src="renderer.js"></script>
+  <script src="renderer.js"></script>
 </body>
 </html>

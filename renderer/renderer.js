@@ -1,834 +1,397 @@
 'use strict';
 
-// ── Known apps for the link modal ─────────────────────────────────────────────
-const KNOWN_APPS = [
-  { name: 'Messages',        bundleId: 'com.apple.MobileSMS' },
-  { name: 'WhatsApp',        bundleId: 'net.whatsapp.WhatsApp' },
-  { name: 'Telegram',        bundleId: 'ru.keepcoder.Telegram' },
-  { name: 'Slack',           bundleId: 'com.tinyspeck.slackmacgap' },
-  { name: 'Zoom',            bundleId: 'us.zoom.xos' },
-  { name: 'Mail',            bundleId: 'com.apple.mail' },
-  { name: 'FaceTime',        bundleId: 'com.apple.FaceTime' },
-  { name: 'Discord',         bundleId: 'com.hnc.Discord' },
-  { name: 'Messenger',       bundleId: 'com.facebook.Messenger' },
-  { name: 'Microsoft Teams', bundleId: 'com.microsoft.teams2' },
-  { name: 'Signal',          bundleId: 'org.whispersystems.signal-desktop' },
-  { name: 'Safari',          bundleId: 'com.apple.Safari' },
-  { name: 'Google Chrome',   bundleId: 'com.google.Chrome' },
-];
-
-const BUNDLE_NAMES = Object.fromEntries(KNOWN_APPS.map(a => [a.bundleId, a.name]));
-function displayName(bid) { return BUNDLE_NAMES[bid] || bid; }
-
-// ── State ─────────────────────────────────────────────────────────────────────
-let state = {
-  folders:           [],
-  notes:             [],
-  activeFolder:      'all',   // 'all' | 'unfiled' | 'trash' | <id>
-  activeNote:        null,    // note object
-  highlightedNoteId: null,    // list selection after closing editor (for Delete key)
-  linkedApps:        [],
-  searchQuery:       '',
-  aiMessages:        [],
-  aiLoading:         false,
-  saveTimer:         null,
-  config:            {},
+const state = {
+  notes: [],
+  activeId: null,
+  /** Note id highlighted for ↑↓ / Delete (may match activeId when a note is open). */
+  listFocusId: null,
+  selectedIds: new Set(),
+  apps: [],
 };
 
-// ── DOM refs ──────────────────────────────────────────────────────────────────
-const $ = id => document.getElementById(id);
-
-// Sidebar
-const folderList        = $('folder-list');
-const notesPanelTitle   = $('notes-panel-title');
-const notesList         = $('notes-list');
-const notesEmpty        = $('notes-empty');
-const searchInput       = $('search-input');
-
-// Editor
-const editorPlaceholder = $('editor-placeholder');
-const editorContent     = $('editor-content');
-const noteTitleInput    = $('note-title-input');
-const noteContentInput  = $('note-content-input');
-const noteStatus        = $('note-status');
-const appLinksBody      = $('app-links-body');
-
-// AI
-const aiPanel           = $('ai-panel');
-const aiMessages        = $('ai-messages');
-const aiInput           = $('ai-input');
-const aiSendBtn         = $('ai-send-btn');
-
-// Modals
-const settingsOverlay   = $('settings-overlay');
-const addLinkModal      = $('add-link-modal');
-const newFolderModal    = $('new-folder-modal');
-
-// ── Init ──────────────────────────────────────────────────────────────────────
-async function init() {
-  state.config = await window.api.getConfig();
-  await loadFolders();
-  await loadNotes();
-  bindEvents();
-  applyConfig();
-  showAiPanel({ focusInput: false });
-}
-
-function applyConfig() {
-  $('surfacing-toggle').checked    = state.config.surfacingEnabled !== false;
-  $('cooldown-input').value        = state.config.surfaceCooldownMinutes || 30;
-  $('model-input').value           = state.config.model || 'claude-sonnet-4-6';
-  $('auto-link-toggle').checked    = state.config.autoAppLinkFromText !== false;
-}
-
-// ── Data loaders ──────────────────────────────────────────────────────────────
-async function loadFolders() {
-  state.folders = await window.api.getFolders();
-  renderFolderList();
-}
-
-async function loadNotes(query) {
-  if (query !== undefined) state.searchQuery = query;
-
-  if (state.searchQuery) {
-    state.notes = await window.api.searchNotes(state.searchQuery);
-    notesPanelTitle.textContent = `Search: "${state.searchQuery}"`;
-  } else {
-    state.notes = await window.api.getNotes(state.activeFolder);
-    notesPanelTitle.textContent = folderTitle(state.activeFolder);
-  }
-
-  renderNoteList();
-}
-
-function folderTitle(f) {
-  if (f === 'all')     return 'All Notes';
-  if (f === 'unfiled') return 'Unfiled';
-  if (f === 'trash')   return 'Recently deleted';
-  const folder = state.folders.find(x => x.id === f);
-  return folder ? folder.name : 'Notes';
-}
-
-// ── Render ────────────────────────────────────────────────────────────────────
-function renderFolderList() {
-  folderList.innerHTML = '';
-  for (const folder of state.folders) {
-    const el = document.createElement('div');
-    el.className = 'folder-item' + (state.activeFolder === folder.id ? ' active' : '');
-    el.dataset.folder = folder.id;
-    el.innerHTML = `
-      <span class="folder-icon">📁</span>
-      <span class="folder-name">${esc(folder.name)}</span>
-      <button class="folder-delete" data-folder-id="${folder.id}" title="Delete folder">✕</button>
-    `;
-    folderList.appendChild(el);
-  }
-}
-
-function renderNoteList() {
-  const container = notesList;
-
-  // Remove old note items
-  [...container.querySelectorAll('.note-item')].forEach(el => el.remove());
-  notesEmpty.style.display = state.notes.length === 0 ? '' : 'none';
-
-  const focusId = state.activeNote?.id ?? state.highlightedNoteId;
-  for (const note of state.notes) {
-    const el = document.createElement('div');
-    el.className = 'note-item' + (focusId === note.id ? ' active' : '');
-    el.dataset.noteId = note.id;
-    const snip = (note.content || '').slice(0, 80).replace(/\n/g, ' ');
-    const date  = formatDate(note.updated_at);
-    el.innerHTML = `
-      <div class="note-title">${esc(note.title || 'Untitled')}</div>
-      <div class="note-snippet">${esc(snip) || '<em>No content</em>'}</div>
-      <div class="note-meta">
-        <span>${date}</span>
-      </div>
-    `;
-    container.appendChild(el);
-  }
-}
-
-function renderAppLinks() {
-  appLinksBody.innerHTML = '';
-  for (const link of state.linkedApps) {
-    // Support both [{bundle_id, source}] objects and plain strings (fallback)
-    const bid    = typeof link === 'string' ? link : link.bundle_id;
-    const source = typeof link === 'string' ? 'manual' : (link.source || 'manual');
-    const chip = document.createElement('div');
-    chip.className = 'app-chip' + (source === 'auto' ? ' app-chip-auto' : '');
-    chip.title = source === 'auto' ? 'Auto-detected from note text' : 'Manually linked';
-    chip.innerHTML = `
-      <span>${esc(displayName(bid))}</span>
-      ${source === 'auto' ? '<span class="chip-auto-badge" title="Auto-detected">A</span>' : ''}
-      <button class="chip-remove" data-bundle="${esc(bid)}" title="Remove">×</button>
-    `;
-    appLinksBody.appendChild(chip);
-  }
-}
-
-function renderAiMessages() {
-  aiMessages.innerHTML = '';
-  for (const msg of state.aiMessages) {
-    appendAiMsg(msg.role, msg.content);
-  }
-  if (state.aiMessages.length === 0) {
-    appendAiMsg(
-      'assistant',
-      'Hi! I can help you search, organize, and manage your notes. What would you like to do?\n\nType /help for keyboard shortcuts.'
-    );
-  }
-}
-
-function appendAiMsg(role, content) {
-  const div = document.createElement('div');
-  div.className = `ai-msg ${role}`;
-  div.textContent = content;
-  aiMessages.appendChild(div);
-  aiMessages.scrollTop = aiMessages.scrollHeight;
-}
-
-// ── Note CRUD ─────────────────────────────────────────────────────────────────
-async function selectNote(id) {
-  const note = await window.api.getNote(id);
-  if (!note) return;
-  state.activeNote        = note;
-  state.highlightedNoteId = id;
-  // linked_bundle_ids is [{bundle_id, source}] from main process
-  state.linkedApps        = note.linked_bundle_ids || [];
-
-  document.querySelectorAll('.note-item').forEach(el => {
-    el.classList.toggle('active', Number(el.dataset.noteId) === id);
-  });
-
-  editorPlaceholder.style.display = 'none';
-  editorContent.style.display     = 'flex';
-  editorContent.style.flexDirection = 'column';
-
-  noteTitleInput.value   = note.title   || '';
-  noteContentInput.value = note.content || '';
-  noteStatus.textContent = `Saved ${formatDate(note.updated_at)}`;
-
-  renderAppLinks();
-  updateTrashEditorUi();
-}
-
-async function createNote() {
-  const folderForNew =
-    state.activeFolder === 'all' || state.activeFolder === 'unfiled' || state.activeFolder === 'trash'
-      ? null
-      : state.activeFolder;
-  const note = await window.api.createNote({
-    title:    'New Note',
-    content:  '',
-    folderId: folderForNew,
-  });
-  await loadNotes();
-  selectNote(note.id);
-}
-
-function updateTrashEditorUi() {
-  const banner   = $('editor-trash-banner');
-  const appPanel = $('app-links-panel');
-  const delBtn   = $('delete-note-btn');
-  const trashed  = !!(state.activeNote && state.activeNote.deleted_at);
-  if (trashed) {
-    banner.classList.remove('hidden');
-    appPanel.style.display = 'none';
-    delBtn.title = 'Delete forever…';
-  } else {
-    banner.classList.add('hidden');
-    appPanel.style.display = '';
-    delBtn.title = 'Move to Recently deleted';
-  }
-}
-
-async function saveAndExitNote() {
-  if (!state.activeNote) return;
-  const id = state.activeNote.id;
-  clearTimeout(state.saveTimer);
-  state.saveTimer = null;
-  await saveActiveNote();
-  state.activeNote = null;
-  state.linkedApps = [];
-  state.highlightedNoteId = id;
-  editorPlaceholder.style.display = '';
-  editorContent.style.display     = 'none';
-  document.querySelectorAll('.note-item').forEach(el => {
-    el.classList.toggle('active', Number(el.dataset.noteId) === id);
-  });
-  await loadNotes();
-}
-
-/** After removing `removedId` from `notesBefore`, which note should be selected (next row, else previous). */
-function neighborNoteIdAfterRemoval(notesBefore, removedId) {
-  const idx = notesBefore.findIndex(n => n.id === removedId);
-  if (idx < 0) return null;
-  if (idx < notesBefore.length - 1) return notesBefore[idx + 1].id;
-  if (idx > 0) return notesBefore[idx - 1].id;
-  return null;
-}
-
-async function focusNoteAfterListChange(nextId) {
-  if (nextId != null && state.notes.some(n => n.id === nextId)) {
-    await selectNote(nextId);
-    return;
-  }
-  state.highlightedNoteId = null;
-  document.querySelectorAll('.note-item').forEach(el => el.classList.remove('active'));
-}
-
-async function trashNoteById(id) {
-  const snap   = [...state.notes];
-  const nextId = neighborNoteIdAfterRemoval(snap, id);
-
-  await window.api.deleteNote(id);
-  if (state.activeNote?.id === id) {
-    state.activeNote = null;
-    state.linkedApps = [];
-    editorPlaceholder.style.display = '';
-    editorContent.style.display     = 'none';
-    $('editor-trash-banner').classList.add('hidden');
-    $('app-links-panel').style.display = '';
-  }
-  if (state.highlightedNoteId === id) state.highlightedNoteId = null;
-  await loadNotes();
-  await focusNoteAfterListChange(nextId);
-}
-
-async function deleteActiveNote() {
-  if (!state.activeNote) return;
-  if (state.activeNote.deleted_at) {
-    if (!confirm(`Permanently delete "${state.activeNote.title || 'Untitled'}"? This cannot be undone.`)) return;
-    const snap   = [...state.notes];
-    const rid    = state.activeNote.id;
-    const nextId = neighborNoteIdAfterRemoval(snap, rid);
-    await window.api.permanentDeleteNote(rid);
-    state.activeNote = null;
-    state.linkedApps = [];
-    if (state.highlightedNoteId === rid) state.highlightedNoteId = null;
-    editorPlaceholder.style.display = '';
-    editorContent.style.display     = 'none';
-    $('editor-trash-banner').classList.add('hidden');
-    $('app-links-panel').style.display = '';
-    await loadNotes();
-    await focusNoteAfterListChange(nextId);
-    return;
-  }
-  if (!confirm(`Move "${state.activeNote.title || 'Untitled'}" to Recently deleted?`)) return;
-  await trashNoteById(state.activeNote.id);
-}
-
-async function restoreActiveNote() {
-  if (!state.activeNote?.deleted_at) return;
-  const id = state.activeNote.id;
-  await window.api.restoreNote(id);
-  await switchFolder('all');
-  const refreshed = await window.api.getNote(id);
-  if (refreshed) await selectNote(id);
-}
-
-async function eraseActiveNoteForever() {
-  if (!state.activeNote?.deleted_at) return;
-  if (!confirm(`Permanently delete "${state.activeNote.title || 'Untitled'}"? This cannot be undone.`)) return;
-  const snap   = [...state.notes];
-  const rid    = state.activeNote.id;
-  const nextId = neighborNoteIdAfterRemoval(snap, rid);
-  await window.api.permanentDeleteNote(rid);
-  state.activeNote = null;
-  state.linkedApps = [];
-  if (state.highlightedNoteId === rid) state.highlightedNoteId = null;
-  editorPlaceholder.style.display = '';
-  editorContent.style.display     = 'none';
-  $('editor-trash-banner').classList.add('hidden');
-  $('app-links-panel').style.display = '';
-  await loadNotes();
-  await focusNoteAfterListChange(nextId);
-}
-
-function scheduleSave() {
-  clearTimeout(state.saveTimer);
-  state.saveTimer = setTimeout(saveActiveNote, 800);
-}
-
-async function saveActiveNote() {
-  if (!state.activeNote) return;
-  const title   = noteTitleInput.value;
-  const content = noteContentInput.value;
-  const updated = await window.api.updateNote(state.activeNote.id, { title, content });
-  if (updated) {
-    state.activeNote = { ...state.activeNote, ...updated };
-    noteStatus.textContent = `Saved ${formatDate(updated.updated_at)}`;
-    // Update list item in-place
-    const listEl = document.querySelector(`.note-item[data-note-id="${updated.id}"]`);
-    if (listEl) {
-      listEl.querySelector('.note-title').textContent = title || 'Untitled';
-      listEl.querySelector('.note-snippet').textContent = (content || '').slice(0, 80).replace(/\n/g, ' ');
-      listEl.querySelector('.note-meta span').textContent = formatDate(updated.updated_at);
-    }
-  }
-}
-
-/** True when ↑/↓ should move the notes list selection (not e.g. caret in a textarea). */
-function shouldUseArrowNoteNav(e) {
-  if (e.metaKey || e.ctrlKey || e.altKey) return false;
-  const t = e.target;
-  if (t === noteContentInput) return false;
-  if (t === searchInput) return false;
-  if (t === aiInput) return false;
-  if (!addLinkModal.classList.contains('hidden')) return false;
-  if (!newFolderModal.classList.contains('hidden')) return false;
-  if (!settingsOverlay.classList.contains('hidden')) return false;
-  return true;
-}
-
-function shouldUseDeleteNoteKey(e) {
-  if (e.key !== 'Delete' && e.key !== 'Backspace') return false;
-  if (e.metaKey || e.ctrlKey || e.altKey) return false;
-  if (state.activeFolder === 'trash') return false;
-  const t = e.target;
-  if (t === noteContentInput || t === noteTitleInput) return false;
-  if (t === searchInput || t === aiInput) return false;
-  if (!addLinkModal.classList.contains('hidden')) return false;
-  if (!newFolderModal.classList.contains('hidden')) return false;
-  if (!settingsOverlay.classList.contains('hidden')) return false;
-  if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return false;
-  const id = state.activeNote?.id ?? state.highlightedNoteId;
-  return id != null;
-}
-
-function getNoteListNavIndex() {
-  const items = [...notesList.querySelectorAll('.note-item')];
-  if (items.length === 0) return -1;
-  const focusId = state.activeNote?.id ?? state.highlightedNoteId;
-  const byActive = items.findIndex(el => el.classList.contains('active'));
-  if (byActive >= 0) return byActive;
-  if (focusId != null) {
-    const byId = items.findIndex(el => Number(el.dataset.noteId) === focusId);
-    if (byId >= 0) return byId;
-  }
-  return -1;
-}
-
-async function navigateNoteList(delta) {
-  const items = [...notesList.querySelectorAll('.note-item')];
-  if (items.length === 0) return;
-
-  let i = getNoteListNavIndex();
-  if (i < 0) {
-    i = delta > 0 ? 0 : items.length - 1;
-  } else {
-    i = Math.max(0, Math.min(items.length - 1, i + delta));
-  }
-
-  const id = Number(items[i].dataset.noteId);
-  await selectNote(id);
-  items[i].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-}
-
-// ── Folder CRUD ───────────────────────────────────────────────────────────────
-async function createFolder(name) {
-  if (!name.trim()) return;
-  await window.api.createFolder({ name: name.trim() });
-  await loadFolders();
-}
-
-async function deleteFolder(id) {
-  const folder = state.folders.find(f => f.id === id);
-  if (!confirm(`Delete folder "${folder?.name}"? Notes will become unfiled.`)) return;
-  await window.api.deleteFolder(id);
-  if (state.activeFolder === id) await switchFolder('all');
-  else await loadFolders();
-}
-
-function openNewFolderModal() {
-  $('new-folder-name').value = '';
-  newFolderModal.classList.remove('hidden');
-  $('new-folder-name').focus();
-}
-
-async function switchFolder(folder) {
-  state.activeFolder = folder;
-  state.searchQuery  = '';
-  searchInput.value  = '';
-
-  // Update sidebar active state
-  document.querySelectorAll('.folder-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.folder === String(folder));
-  });
-
-  await loadFolders();
-  await loadNotes();
-}
-
-// ── App links ─────────────────────────────────────────────────────────────────
-async function addAppLink(bundleId) {
-  if (!state.activeNote || !bundleId.trim()) return;
-  await window.api.linkNoteToApp(state.activeNote.id, bundleId.trim());
-  // Refresh from server to get [{bundle_id, source}] with updated source
-  state.linkedApps = await window.api.getLinkedApps(state.activeNote.id);
-  renderAppLinks();
-  updateNoteLinkedBadge();
-}
-
-async function removeAppLink(bundleId) {
-  if (!state.activeNote) return;
-  await window.api.unlinkNoteFromApp(state.activeNote.id, bundleId);
-  state.linkedApps = state.linkedApps.filter(l => {
-    const bid = typeof l === 'string' ? l : l.bundle_id;
-    return bid !== bundleId;
-  });
-  renderAppLinks();
-  updateNoteLinkedBadge();
-}
-
-function updateNoteLinkedBadge() {
-  if (!state.activeNote) return;
-  const listEl = document.querySelector(`.note-item[data-note-id="${state.activeNote.id}"]`);
-  if (!listEl) return;
-  let badge = listEl.querySelector('.note-linked-badge');
-  if (state.linkedApps.length > 0) {
-    if (!badge) {
-      badge = document.createElement('span');
-      badge.className = 'note-linked-badge';
-      listEl.querySelector('.note-meta').appendChild(badge);
-    }
-    badge.textContent = `🔗 ${state.linkedApps.length}`;
-  } else {
-    badge?.remove();
-  }
-}
-
-// ── AI assistant ──────────────────────────────────────────────────────────────
-function showAiPanel(opts) {
-  const focusInput = opts?.focusInput !== false;
-  aiPanel.classList.remove('hidden');
-  $('toggle-ai-btn').classList.add('active');
-  renderAiMessages();
-  if (focusInput) aiInput.focus();
-}
-
-function hideAiPanel() {
-  aiPanel.classList.add('hidden');
-  $('toggle-ai-btn').classList.remove('active');
-}
-
-let _lastAiToggleAt = 0;
-function toggleAiPanel() {
-  const now = Date.now();
-  if (now - _lastAiToggleAt < 80) return;
-  _lastAiToggleAt = now;
-  if (aiPanel.classList.contains('hidden')) showAiPanel();
-  else hideAiPanel();
-}
-
-const LOCAL_AI_HELP_REPLY =
-  'Keyboard shortcuts (macOS)\n\n' +
-  'Global\n' +
-  '• ⌘⇧P — Show / hide Proactive Recall\n\n' +
-  'In this window\n' +
-  '• ⌘N — New note\n' +
-  '• ⌘⇧N — New folder\n' +
-  '• ⌘⇧F — Focus search\n' +
-  '• ⌘⇧A — Toggle AI assistant (Notes menu too)\n' +
-  '• ⌘↵ — Send AI message\n' +
-  '• ↑ / ↓ — Move through the notes list (skipped in note body, search, or AI field)\n' +
-  '• Escape — Close modal; when editing a note, save and return to the list\n' +
-  '• Delete / Backspace — Move selected note to Recently deleted (not while typing in inputs; disabled in Recently deleted)';
-
-function isLocalAiSlashCommand(text) {
-  const t = text.trim().toLowerCase();
-  return t === '/help' || t === '/shortcuts';
-}
-
-async function sendAiMessage() {
-  const text = aiInput.value.trim();
-  if (!text || state.aiLoading) return;
-
-  state.aiMessages.push({ role: 'user', content: text });
-  aiInput.value = '';
-  aiInput.style.height = '';
-  appendAiMsg('user', text);
-
-  if (isLocalAiSlashCommand(text)) {
-    state.aiMessages.push({ role: 'assistant', content: LOCAL_AI_HELP_REPLY });
-    appendAiMsg('assistant', LOCAL_AI_HELP_REPLY);
-    aiInput.focus();
-    return;
-  }
-
-  state.aiLoading = true;
-  aiSendBtn.disabled = true;
-  const thinking = document.createElement('div');
-  thinking.className = 'ai-msg thinking';
-  thinking.textContent = 'Thinking…';
-  aiMessages.appendChild(thinking);
-  aiMessages.scrollTop = aiMessages.scrollHeight;
-
-  try {
-    const result = await window.api.assistantQuery(text, state.aiMessages.slice(0, -1));
-    thinking.remove();
-
-    if (result.reply) {
-      state.aiMessages.push({ role: 'assistant', content: result.reply });
-      appendAiMsg('assistant', result.reply);
-
-      // If assistant mutated notes, refresh
-      const mutating = result.toolCalls?.some(t =>
-        ['create_note','update_note','delete_note','move_note_to_folder','create_folder','delete_folder',
-         'update_folder','link_note_to_app','unlink_note_from_app','scan_note_app_links'].includes(t.name)
-      );
-      if (mutating) {
-        await loadFolders();
-        await loadNotes();
-        if (state.activeNote) {
-          const refreshed = await window.api.getNote(state.activeNote.id);
-          if (refreshed) {
-            noteTitleInput.value   = refreshed.title;
-            noteContentInput.value = refreshed.content;
-            // linked_bundle_ids is [{bundle_id, source}]
-            state.linkedApps       = refreshed.linked_bundle_ids || [];
-            renderAppLinks();
-          }
-        }
-      }
-    }
-  } catch (err) {
-    thinking.remove();
-    appendAiMsg('assistant', `Error: ${err.message}`);
-  } finally {
-    state.aiLoading    = false;
-    aiSendBtn.disabled = false;
-    aiInput.focus();
-  }
-}
-
-// ── Settings ──────────────────────────────────────────────────────────────────
-function openSettings() {
-  applyConfig();
-  settingsOverlay.classList.remove('hidden');
-}
-
-function closeSettings() {
-  settingsOverlay.classList.add('hidden');
-}
-
-async function saveSettings() {
-  const model      = $('model-input').value.trim() || 'claude-sonnet-4-6';
-  const cooldown   = parseInt($('cooldown-input').value, 10) || 30;
-  const surfacing  = $('surfacing-toggle').checked;
-  const autoLink   = $('auto-link-toggle').checked;
-
-  await window.api.saveConfig('model', model);
-  await window.api.saveConfig('surfaceCooldownMinutes', cooldown);
-  await window.api.saveConfig('surfacingEnabled', surfacing);
-  await window.api.saveConfig('autoAppLinkFromText', autoLink);
-
-  state.config = await window.api.getConfig();
-  closeSettings();
-}
-
-// ── Event bindings ────────────────────────────────────────────────────────────
-function bindEvents() {
-  document.querySelectorAll('.folder-item[data-folder]').forEach(el => {
-    el.addEventListener('click', () => {
-      const f = el.dataset.folder;
-      if (f === 'all') switchFolder('all');
-      else if (f === 'unfiled') switchFolder('unfiled');
-      else if (f === 'trash') switchFolder('trash');
-      else switchFolder(Number(f));
-    });
-  });
-
-  folderList.addEventListener('click', e => {
-    const item = e.target.closest('.folder-item');
-    const del  = e.target.closest('.folder-delete');
-    if (del) { e.stopPropagation(); deleteFolder(Number(del.dataset.folderId)); return; }
-    if (item) switchFolder(Number(item.dataset.folder));
-  });
-
-  // New folder
-  $('new-folder-btn').addEventListener('click', () => openNewFolderModal());
-  $('close-folder-modal-btn').addEventListener('click', () => newFolderModal.classList.add('hidden'));
-  $('create-folder-confirm-btn').addEventListener('click', async () => {
-    await createFolder($('new-folder-name').value);
-    newFolderModal.classList.add('hidden');
-  });
-  $('new-folder-name').addEventListener('keydown', async e => {
-    if (e.key === 'Enter') { await createFolder($('new-folder-name').value); newFolderModal.classList.add('hidden'); }
-    if (e.key === 'Escape') newFolderModal.classList.add('hidden');
-  });
-
-  // Notes list clicks
-  notesList.addEventListener('click', e => {
-    const item = e.target.closest('.note-item');
-    if (item) selectNote(Number(item.dataset.noteId));
-  });
-
-  // New note
-  $('new-note-btn').addEventListener('click', createNote);
-
-  // Search
-  searchInput.addEventListener('input', () => loadNotes(searchInput.value));
-  searchInput.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { searchInput.value = ''; loadNotes(''); }
-  });
-
-  // Editor autosave
-  noteTitleInput.addEventListener('input', scheduleSave);
-  noteContentInput.addEventListener('input', scheduleSave);
-
-  $('delete-note-btn').addEventListener('click', deleteActiveNote);
-  $('restore-note-btn').addEventListener('click', () => void restoreActiveNote());
-  $('erase-note-btn').addEventListener('click', () => void eraseActiveNoteForever());
-
-  // App links panel
-  appLinksBody.addEventListener('click', e => {
-    const btn = e.target.closest('.chip-remove');
-    if (btn) removeAppLink(btn.dataset.bundle);
-  });
-
-  $('add-app-link-btn').addEventListener('click', openAddLinkModal);
-  $('close-link-modal-btn').addEventListener('click', () => addLinkModal.classList.add('hidden'));
-  $('add-custom-link-btn').addEventListener('click', async () => {
-    const bid = $('custom-bundle-input').value.trim();
-    if (bid) { await addAppLink(bid); addLinkModal.classList.add('hidden'); }
-  });
-  $('custom-bundle-input').addEventListener('keydown', async e => {
-    if (e.key === 'Enter') {
-      const bid = $('custom-bundle-input').value.trim();
-      if (bid) { await addAppLink(bid); addLinkModal.classList.add('hidden'); }
-    }
-  });
-
-  $('toggle-ai-btn').addEventListener('click', () => toggleAiPanel());
-  $('ai-close-btn').addEventListener('click', hideAiPanel);
-  aiSendBtn.addEventListener('click', sendAiMessage);
-  aiInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendAiMessage(); }
-  });
-  aiInput.addEventListener('input', () => {
-    aiInput.style.height = '';
-    aiInput.style.height = Math.min(aiInput.scrollHeight, 100) + 'px';
-  });
-
-  // Settings
-  $('settings-btn').addEventListener('click', openSettings);
-  $('close-settings-btn').addEventListener('click', closeSettings);
-  $('save-settings-btn').addEventListener('click', saveSettings);
-  $('save-api-key-btn').addEventListener('click', async () => {
-    const key = $('api-key-input').value.trim();
-    if (key) {
-      await window.api.saveConfig('anthropicApiKey', key);
-      $('api-key-input').value = '';
-      $('api-key-input').placeholder = '(saved)';
-    }
-  });
-  settingsOverlay.addEventListener('click', e => { if (e.target === settingsOverlay) closeSettings(); });
-
-  document.addEventListener('keydown', e => {
-    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && shouldUseArrowNoteNav(e)) {
-      e.preventDefault();
-      void navigateNoteList(e.key === 'ArrowDown' ? 1 : -1);
-      return;
-    }
-    if (shouldUseDeleteNoteKey(e)) {
-      e.preventDefault();
-      const id = state.activeNote?.id ?? state.highlightedNoteId;
-      if (id != null) void trashNoteById(id);
-      return;
-    }
-    if (e.metaKey && e.key === 'n' && !e.shiftKey) { e.preventDefault(); createNote(); }
-    if (e.metaKey && e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); openNewFolderModal(); }
-    if (e.metaKey && e.shiftKey && e.key === 'F') { e.preventDefault(); searchInput.focus(); searchInput.select(); }
-    if (e.key === 'Escape') {
-      if (!addLinkModal.classList.contains('hidden')) { addLinkModal.classList.add('hidden'); return; }
-      if (!newFolderModal.classList.contains('hidden')) { newFolderModal.classList.add('hidden'); return; }
-      if (!settingsOverlay.classList.contains('hidden')) { closeSettings(); return; }
-      if (e.target === searchInput) return;
-      if (state.activeNote && editorContent.style.display !== 'none') {
-        e.preventDefault();
-        void saveAndExitNote();
-      }
-    }
-  });
-
-  document.addEventListener(
-    'keydown',
-    e => {
-      if (e.metaKey && e.shiftKey && e.key.toLowerCase() === 'a') {
-        e.preventDefault();
-        toggleAiPanel();
-      }
-    },
-    true
-  );
-
-  // Main-process events
-  window.api.onNewNote(() => createNote());
-  window.api.onNewFolder(() => openNewFolderModal());
-  window.api.onFocusSearch(() => { searchInput.focus(); searchInput.select(); });
-  window.api.onToggleAi(() => toggleAiPanel());
-  window.api.onOpenNote(noteId => selectNote(noteId));
-  window.api.onSurfacingToggled(enabled => {
-    state.config.surfacingEnabled = enabled;
-    $('surfacing-toggle').checked = enabled;
-  });
-  // Refresh app link chips when the auto-scanner adds new links
-  window.api.onNoteLinksUpdated(async (noteId) => {
-    if (state.activeNote?.id === noteId) {
-      state.linkedApps = await window.api.getLinkedApps(noteId);
-      renderAppLinks();
-      updateNoteLinkedBadge();
-    }
+const queryInput = document.getElementById('query');
+const bulkActionsEl = document.getElementById('bulk-actions');
+const selectedCountEl = document.getElementById('selected-count');
+const deleteSelectedBtn = document.getElementById('delete-selected-btn');
+const resultsEl = document.getElementById('results');
+const editorEl = document.getElementById('editor');
+const editorDateEl = document.getElementById('editor-date');
+const editorTextEl = document.getElementById('editor-text');
+const copyBtn = document.getElementById('copy-note-btn');
+const deleteNoteBtn = document.getElementById('delete-note-btn');
+const appSelect = document.getElementById('app-select');
+const linkBtn = document.getElementById('link-btn');
+const linksEl = document.getElementById('links');
+
+let saveTimer = null;
+
+function focusListRow(noteId) {
+  if (noteId == null) return;
+  requestAnimationFrame(() => {
+    const btn = resultsEl.querySelector(`.result[data-id="${noteId}"]`);
+    btn?.focus();
   });
 }
 
-async function openAddLinkModal() {
-  if (!state.activeNote) return;
-  $('custom-bundle-input').value = '';
-
-  const knownList = $('known-apps-list');
-  knownList.innerHTML = '';
-
-  for (const app of KNOWN_APPS) {
-    const isLinked = state.linkedApps.some(l => {
-      const bid = typeof l === 'string' ? l : l.bundle_id;
-      return bid === app.bundleId;
-    });
-    const btn = document.createElement('button');
-    btn.className = 'known-app-btn' + (isLinked ? ' linked' : '');
-    btn.textContent = (isLinked ? '✓ ' : '') + app.name;
-    btn.dataset.bundleId = app.bundleId;
-    btn.addEventListener('click', async () => {
-      if (isLinked) {
-        await removeAppLink(app.bundleId);
-      } else {
-        await addAppLink(app.bundleId);
-      }
-      addLinkModal.classList.add('hidden');
-    });
-    knownList.appendChild(btn);
-  }
-
-  addLinkModal.classList.remove('hidden');
+function updateBulkActionsUi() {
+  const count = state.selectedIds.size;
+  selectedCountEl.textContent = `${count} selected`;
+  bulkActionsEl.classList.toggle('hidden', count === 0);
 }
 
-// ── Utilities ─────────────────────────────────────────────────────────────────
-function esc(str) {
-  return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function formatDate(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (isNaN(d)) return iso;
-  const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  if (sameDay) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
-init().catch(err => console.error('[renderer] Init error:', err));
+async function loadApps() {
+  state.apps = await window.mvp.listApps();
+}
+
+function labelForAppKey(bundleId) {
+  const hit = state.apps.find((a) => a.bundleId === bundleId);
+  return hit ? hit.name : bundleId;
+}
+
+async function runQuery(text) {
+  state.notes = text ? await window.mvp.queryNotes(text) : await window.mvp.recentNotes();
+  const validIds = new Set(state.notes.map((n) => n.id));
+  state.selectedIds = new Set([...state.selectedIds].filter((id) => validIds.has(id)));
+  if (state.listFocusId != null && !state.notes.some((n) => n.id === state.listFocusId)) {
+    state.listFocusId = state.notes[0]?.id ?? null;
+  }
+  renderResults();
+  updateBulkActionsUi();
+}
+
+function renderResults() {
+  if (state.notes.length === 0) {
+    resultsEl.innerHTML = '<div class="empty">No notes found.</div>';
+    return;
+  }
+  resultsEl.innerHTML = state.notes
+    .map((note) => {
+      const preview = note.text.split('\n')[0].slice(0, 120);
+      const active = note.id === state.activeId ? ' active' : '';
+      const listFocus = note.id === state.listFocusId ? ' list-focus' : '';
+      const selected = state.selectedIds.has(note.id) ? ' checked' : '';
+      const tab = note.id === state.listFocusId ? '0' : '-1';
+      return `<div class="result-row${active}${listFocus}" data-id="${note.id}">
+        <label class="result-select" title="Select note">
+          <input type="checkbox" class="result-checkbox" data-id="${note.id}"${selected} />
+        </label>
+        <button type="button" class="result" data-id="${note.id}" tabindex="${tab}">
+          <span class="result-text">${escapeHtml(preview)}</span>
+          <span class="result-date">${escapeHtml(formatDate(note.created_at))}</span>
+        </button>
+        <button type="button" class="result-delete" data-id="${note.id}" title="Delete note">×</button>
+      </div>`;
+    })
+    .join('');
+}
+
+async function openNote(noteId) {
+  const note = await window.mvp.getNote(noteId);
+  if (!note) return;
+  state.activeId = note.id;
+  state.listFocusId = note.id;
+  editorEl.classList.remove('hidden');
+  editorDateEl.textContent = formatDate(note.created_at);
+  editorTextEl.value = note.text;
+  renderResults();
+  await renderLinks();
+}
+
+async function renderLinks() {
+  if (!state.activeId) {
+    linksEl.innerHTML = '';
+    return;
+  }
+  const links = await window.mvp.getLinks(state.activeId);
+  if (!links.length) {
+    linksEl.innerHTML = '';
+    return;
+  }
+  linksEl.innerHTML = links
+    .map(
+      (appKey) =>
+        `<button type="button" class="chip" data-remove="${escapeHtml(appKey)}">${escapeHtml(labelForAppKey(appKey))} ×</button>`
+    )
+    .join('');
+}
+
+async function saveActiveNote() {
+  if (!state.activeId) return;
+  const value = editorTextEl.value.trim();
+  if (!value) return;
+  await window.mvp.updateNote(state.activeId, value);
+  await runQuery(queryInput.value.trim());
+}
+
+async function removeNoteById(id) {
+  if (!Number.isFinite(id)) return;
+  if (!confirm('Delete this note? This cannot be undone.')) return;
+  const snap = [...state.notes];
+  const idx = snap.findIndex((n) => n.id === id);
+  const neighbor = idx >= 0 ? (snap[idx + 1] || snap[idx - 1]) : null;
+  const ok = await window.mvp.deleteNote(id);
+  if (!ok) return;
+  if (state.activeId === id) {
+    state.activeId = null;
+    editorEl.classList.add('hidden');
+    editorTextEl.value = '';
+    linksEl.innerHTML = '';
+  }
+  state.selectedIds.delete(id);
+  state.listFocusId = null;
+  await runQuery(queryInput.value.trim());
+  state.listFocusId =
+    neighbor && state.notes.some((n) => n.id === neighbor.id) ? neighbor.id : (state.notes[0]?.id ?? null);
+  renderResults();
+  if (state.listFocusId != null) focusListRow(state.listFocusId);
+  else queryInput.focus();
+}
+
+async function removeSelectedNotes() {
+  const ids = [...state.selectedIds];
+  if (ids.length === 0) return;
+  if (!confirm(`Delete ${ids.length} selected note${ids.length === 1 ? '' : 's'}? This cannot be undone.`)) return;
+
+  const deletedCount = await window.mvp.deleteNotes(ids);
+  if (!deletedCount) return;
+
+  if (state.activeId != null && ids.includes(state.activeId)) {
+    state.activeId = null;
+    editorEl.classList.add('hidden');
+    editorTextEl.value = '';
+    linksEl.innerHTML = '';
+  }
+
+  state.selectedIds.clear();
+  state.listFocusId = null;
+  await runQuery(queryInput.value.trim());
+  if (state.notes.length > 0) {
+    state.listFocusId = state.notes[0].id;
+    renderResults();
+    focusListRow(state.listFocusId);
+  } else {
+    queryInput.focus();
+  }
+}
+
+queryInput.addEventListener('input', () => {
+  runQuery(queryInput.value.trim());
+});
+
+queryInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') window.mvp.hideSearch();
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+  if (event.key === 'Enter' && state.listFocusId != null) {
+    event.preventDefault();
+    void openNote(state.listFocusId);
+    return;
+  }
+
+  if (event.key === 'ArrowDown' && state.notes.length > 0) {
+    event.preventDefault();
+    if (state.listFocusId == null) state.listFocusId = state.notes[0].id;
+    else {
+      const i = state.notes.findIndex((n) => n.id === state.listFocusId);
+      if (i >= 0 && i < state.notes.length - 1) state.listFocusId = state.notes[i + 1].id;
+    }
+    renderResults();
+    focusListRow(state.listFocusId);
+    return;
+  }
+
+  if (event.key === 'ArrowUp' && state.notes.length > 0) {
+    if (state.listFocusId == null) return;
+    event.preventDefault();
+    const i = state.notes.findIndex((n) => n.id === state.listFocusId);
+    if (i <= 0) {
+      state.listFocusId = null;
+      renderResults();
+    } else {
+      state.listFocusId = state.notes[i - 1].id;
+      renderResults();
+      focusListRow(state.listFocusId);
+    }
+  }
+});
+
+resultsEl.addEventListener('change', (event) => {
+  const checkbox = event.target.closest('.result-checkbox');
+  if (!checkbox) return;
+  const id = Number(checkbox.dataset.id);
+  if (checkbox.checked) state.selectedIds.add(id);
+  else state.selectedIds.delete(id);
+  updateBulkActionsUi();
+});
+
+resultsEl.addEventListener('click', (event) => {
+  const del = event.target.closest('.result-delete');
+  if (del) {
+    event.stopPropagation();
+    void removeNoteById(Number(del.dataset.id));
+    return;
+  }
+  const button = event.target.closest('.result');
+  if (!button) return;
+  openNote(Number(button.dataset.id));
+});
+
+resultsEl.addEventListener(
+  'keydown',
+  (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const row = event.target.closest('.result-row');
+    if (!row) return;
+
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const currentId = Number(row.dataset.id);
+      const i = state.notes.findIndex((n) => n.id === currentId);
+      if (i < 0) return;
+      if (event.key === 'ArrowDown') {
+        if (i < state.notes.length - 1) {
+          state.listFocusId = state.notes[i + 1].id;
+          renderResults();
+          focusListRow(state.listFocusId);
+        }
+      } else if (i > 0) {
+        state.listFocusId = state.notes[i - 1].id;
+        renderResults();
+        focusListRow(state.listFocusId);
+      } else {
+        state.listFocusId = null;
+        renderResults();
+        queryInput.focus();
+      }
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      const openId = Number(row.dataset.id);
+      event.preventDefault();
+      void openNote(openId);
+      return;
+    }
+  },
+  true
+);
+
+editorTextEl.addEventListener('input', () => {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveActiveNote();
+  }, 250);
+});
+
+editorTextEl.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') window.mvp.hideSearch();
+});
+
+copyBtn.addEventListener('click', async () => {
+  await window.mvp.copyText(editorTextEl.value);
+});
+
+deleteNoteBtn.addEventListener('click', () => {
+  if (!state.activeId) return;
+  void removeNoteById(state.activeId);
+});
+
+deleteSelectedBtn.addEventListener('click', () => {
+  void removeSelectedNotes();
+});
+
+async function submitAppLink() {
+  const appKey = await window.mvp.resolveAppKey(appSelect.value);
+  if (!appKey || !state.activeId) return;
+  await window.mvp.addLink(state.activeId, appKey);
+  appSelect.value = '';
+  await renderLinks();
+}
+
+linkBtn.addEventListener('click', () => {
+  void submitAppLink();
+});
+
+appSelect.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  void submitAppLink();
+});
+
+linksEl.addEventListener('click', async (event) => {
+  const chip = event.target.closest('.chip');
+  if (!chip || !state.activeId) return;
+  const appKey = chip.dataset.remove;
+  await window.mvp.removeLink(state.activeId, appKey);
+  await renderLinks();
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.metaKey && !event.shiftKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'n') {
+    event.preventDefault();
+    window.mvp.openCapture();
+    return;
+  }
+
+  if ((event.key === 'Delete' || event.key === 'Backspace') && state.listFocusId != null) {
+    if (event.target === editorTextEl || event.target === queryInput) return;
+    if (event.target === appSelect) return;
+    if (event.target.closest?.('#links')) return;
+    if (event.target.closest?.('.editor-actions')) return;
+    if (event.target.closest?.('.bulk-actions')) return;
+    if (event.target.closest?.('.result-select')) return;
+    const tag = event.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    event.preventDefault();
+    void removeNoteById(state.listFocusId);
+    return;
+  }
+
+  if ((event.key === 'Delete' || event.key === 'Backspace') && state.selectedIds.size > 1) {
+    if (event.target === editorTextEl || event.target === queryInput) return;
+    const tag = event.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    event.preventDefault();
+    void removeSelectedNotes();
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    window.mvp.hideSearch();
+  }
+});
+
+window.mvp.onSearchFocus(async (payload) => {
+  await runQuery(queryInput.value.trim());
+  queryInput.focus();
+  queryInput.select();
+  if (payload && payload.openNoteId) await openNote(Number(payload.openNoteId));
+});
+
+window.mvp.onNotesChanged(() => {
+  void runQuery(queryInput.value.trim());
+  if (state.activeId != null) void renderLinks();
+});
+
+async function init() {
+  await loadApps();
+  await runQuery('');
+}
+
+init().catch((error) => {
+  resultsEl.innerHTML = `<div class="empty">Failed to load: ${escapeHtml(error.message || String(error))}</div>`;
+});

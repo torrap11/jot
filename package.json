@@ -2,45 +2,66 @@
   "name": "proactive-recall",
   "version": "1.0.0",
   "description": "Local-first notes app with proactive surfacing based on frontmost app",
-  "main": "main.js",
+  "main": "app-main.js",
   "scripts": {
     "start": "electron .",
-    "test": "npm rebuild better-sqlite3 && node --test tests/test-*.js",
+    "test": "node --test tests/*.js",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
-    "dist": "electron-builder --mac --publish never"
+    "dist": "npm run dist:arm64",
+    "dist:arm64": "electron-builder --mac --arm64 --publish never",
+    "dist:universal": "electron-builder --mac --universal --publish never",
+    "dist:signed": "electron-builder --mac --universal --publish never --config.mac.identity=\"Developer ID Application\"",
+    "postinstall": "electron-builder install-app-deps"
   },
   "build": {
     "appId": "com.proactiverecall.app",
     "productName": "Proactive Recall",
     "files": [
-      "main.js",
+      "app-main.js",
       "preload.js",
       "database.js",
       "appWatcher.js",
       "surfaceEngine.js",
-      "assistant.js",
-      "config.js",
+      "noteAppScan.js",
+      "knownApps.js",
       "renderer/**/*",
       "overlay/**/*",
       "node_modules/**/*"
     ],
-    "asarUnpack": ["**/node_modules/better-sqlite3/**/*"],
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**/*"
+    ],
     "mac": {
+      "identity": null,
       "category": "public.app-category.productivity",
-      "target": ["dmg", "zip"],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "extendInfo": {
         "NSAppleEventsUsageDescription": "Proactive Recall needs to read the frontmost application to surface relevant notes."
       }
-    }
+    },
+    "afterSign": "scripts/notarize.js"
   },
-  "keywords": ["notes", "productivity", "electron", "macos"],
+  "keywords": [
+    "notes",
+    "productivity",
+    "electron",
+    "macos"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.55.0",
-    "better-sqlite3": "^12.6.2"
+    "better-sqlite3": "^12.6.2",
+    "file-uri-to-path": "^1.0.0"
   },
   "devDependencies": {
+    "@electron/notarize": "^3.1.0",
     "@electron/rebuild": "^4.0.3",
     "electron": "^40.4.1",
     "electron-builder": "^26.0.12"

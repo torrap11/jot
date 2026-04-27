@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'" />
+  <title>Capture</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="capture-body">
+  <main class="capture-shell">
+    <textarea id="capture-input" placeholder="Type note and press Enter..." autofocus></textarea>
+    <div class="capture-link-row">
+      <input
+        id="capture-app-input"
+        type="text"
+        placeholder="Link to app (optional): type app name or bundle id"
+        aria-label="Link note to app"
+      />
+    </div>
+  </main>
+  <script src="capture.js"></script>
+</body>
+</html>

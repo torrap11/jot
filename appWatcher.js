@@ -89,7 +89,11 @@ function startWatcher({ onAppSwitch, getConfig }) {
     lastSignature = sig;
 
     console.log(`[appWatcher] Frontmost: "${proc.appName}" (${proc.bundleId || 'no bundle id'})`);
-    onAppSwitch(proc.bundleId, proc.appName);
+    try {
+      onAppSwitch(proc.bundleId, proc.appName);
+    } catch (error) {
+      console.error('[appWatcher] onAppSwitch failed:', error.message || error);
+    }
   }, POLL_INTERVAL_MS);
 }
 

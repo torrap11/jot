@@ -1,17 +1,12 @@
 'use strict';
 
-/**
- * database.js — SQLite schema and CRUD helpers for Proactive Recall.
- *
- * Uses better-sqlite3 (synchronous API).
- * Database stored in Electron userData directory as "proactive-recall.db".
- */
-
 const Database = require('better-sqlite3');
-const path     = require('path');
-const { app }  = require('electron');
+const path = require('path');
+const { app } = require('electron');
 
 let db;
+/** Cached: 'app_key' | 'bundle_id' | 'both' (legacy tables can have NOT NULL bundle_id + added app_key). */
+let cachedNoteLinkMode = null;
 
 function getDb() {
   if (db) return db;
@@ -20,347 +15,360 @@ function getDb() {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
-  // ── Folders ────────────────────────────────────────────────────────────────
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS folders (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      name       TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `);
-
-  // ── Notes ──────────────────────────────────────────────────────────────────
   db.exec(`
     CREATE TABLE IF NOT EXISTS notes (
-      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-      title                TEXT NOT NULL DEFAULT '',
-      content              TEXT NOT NULL DEFAULT '',
-      folder_id            INTEGER REFERENCES folders(id),
-      surface_disabled     INTEGER NOT NULL DEFAULT 0,
-      surface_snoozed_until TEXT,
-      last_surfaced_at     TEXT,
-      created_at           TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `);
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      text TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT
+    );
 
-  // ── Note ↔ App links ───────────────────────────────────────────────────────
-  // A note can be linked to one or more bundle IDs for proactive surfacing.
-  // source: 'manual' (user or assistant) | 'auto' (scanner from note text).
-  // One row per (note_id, bundle_id) pair; manual always wins over auto.
-  db.exec(`
     CREATE TABLE IF NOT EXISTS note_app_links (
-      note_id   INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
-      bundle_id TEXT NOT NULL,
-      source    TEXT NOT NULL DEFAULT 'manual',
-      PRIMARY KEY (note_id, bundle_id)
-    )
+      note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      app_key TEXT NOT NULL,
+      PRIMARY KEY (note_id, app_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS note_surface_state (
+      note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      app_key TEXT NOT NULL,
+      snoozed_until TEXT,
+      dismissed INTEGER NOT NULL DEFAULT 0,
+      last_surfaced_at TEXT,
+      surfaced_day TEXT,
+      surfaced_count_day INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (note_id, app_key)
+    );
   `);
 
-  // ── Auto-link dismissals ───────────────────────────────────────────────────
-  // When a user removes an auto-suggested link, record it here so the scanner
-  // does not re-add it on future saves. Manual links clear the dismissal.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS note_app_link_dismissals (
-      note_id   INTEGER NOT NULL,
-      bundle_id TEXT NOT NULL,
-      PRIMARY KEY (note_id, bundle_id)
-    )
-  `);
-
-  // Safe migrations (idempotent column additions)
-  _migrate();
-
+  migrateLegacy();
   return db;
 }
 
-function _migrate() {
-  const db = getDb();
+function migrateLegacy() {
+  const database = getDb();
+  const cols = database.pragma('table_info(notes)').map((c) => c.name);
 
-  // notes: add deleted_at
-  const noteCols = db.pragma('table_info(notes)').map(c => c.name);
-  if (!noteCols.includes('deleted_at')) {
-    db.exec('ALTER TABLE notes ADD COLUMN deleted_at TEXT');
-  }
-
-  // note_app_links: add source column (existing rows default to 'manual')
-  const linkCols = db.pragma('table_info(note_app_links)').map(c => c.name);
-  if (!linkCols.includes('source')) {
-    db.exec("ALTER TABLE note_app_links ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'");
-  }
-}
-
-// ── Notes CRUD ────────────────────────────────────────────────────────────────
-
-function getAllNotes(folderId) {
-  if (folderId === 'trash') {
-    return getDb()
-      .prepare('SELECT * FROM notes WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC')
-      .all();
-  }
-  const active = 'deleted_at IS NULL';
-  if (folderId === undefined || folderId === 'all') {
-    return getDb().prepare(`SELECT * FROM notes WHERE ${active} ORDER BY updated_at DESC`).all();
-  }
-  if (folderId === null || folderId === 'unfiled') {
-    return getDb()
-      .prepare(`SELECT * FROM notes WHERE folder_id IS NULL AND ${active} ORDER BY updated_at DESC`)
-      .all();
-  }
-  return getDb()
-    .prepare(`SELECT * FROM notes WHERE folder_id = ? AND ${active} ORDER BY updated_at DESC`)
-    .all(folderId);
-}
-
-function getNoteById(id) {
-  return getDb().prepare('SELECT * FROM notes WHERE id = ?').get(id);
-}
-
-function searchNotes(query) {
-  const q = `%${(query || '').toLowerCase()}%`;
-  return getDb()
-    .prepare(`SELECT * FROM notes
-              WHERE deleted_at IS NULL
-                AND (lower(title) LIKE ? OR lower(content) LIKE ?)
-              ORDER BY updated_at DESC`)
-    .all(q, q);
-}
-
-function createNote({ title = '', content = '', folderId = null } = {}) {
-  const stmt = getDb().prepare(
-    'INSERT INTO notes (title, content, folder_id) VALUES (?, ?, ?)'
-  );
-  const result = stmt.run(title, content, folderId);
-  return getNoteById(result.lastInsertRowid);
-}
-
-function updateNote(id, { title, content } = {}) {
-  const note = getNoteById(id);
-  if (!note) return null;
-  const newTitle   = title   !== undefined ? title   : note.title;
-  const newContent = content !== undefined ? content : note.content;
-  getDb()
-    .prepare("UPDATE notes SET title = ?, content = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(newTitle, newContent, id);
-  return getNoteById(id);
-}
-
-/** Move note to Recently deleted (soft delete). */
-function moveNoteToTrash(id) {
-  const note = getNoteById(id);
-  if (!note || note.deleted_at) return false;
-  getDb()
-    .prepare("UPDATE notes SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ?")
-    .run(id);
-  return true;
-}
-
-/** Restore from Recently deleted. */
-function restoreNote(id) {
-  const note = getNoteById(id);
-  if (!note || !note.deleted_at) return null;
-  getDb()
-    .prepare("UPDATE notes SET deleted_at = NULL, updated_at = datetime('now') WHERE id = ?")
-    .run(id);
-  return getNoteById(id);
-}
-
-/** Permanently remove (from trash only). */
-function permanentDeleteNote(id) {
-  const note = getNoteById(id);
-  if (!note || !note.deleted_at) return false;
-  getDb().prepare('DELETE FROM notes WHERE id = ?').run(id);
-  return true;
-}
-
-/** @deprecated Use moveNoteToTrash — kept as alias for IPC/tools. */
-function deleteNote(id) {
-  return moveNoteToTrash(id);
-}
-
-function moveNoteToFolder(noteId, folderId) {
-  getDb()
-    .prepare("UPDATE notes SET folder_id = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(folderId ?? null, noteId);
-  return getNoteById(noteId);
-}
-
-// ── Surface lifecycle ─────────────────────────────────────────────────────────
-
-/** Mark note as auto-surfaced and snooze it for cooldown minutes. */
-function markNoteSurfaced(id, cooldownMinutes = 30) {
-  const until = new Date(Date.now() + cooldownMinutes * 60_000).toISOString();
-  getDb()
-    .prepare(`UPDATE notes
-              SET last_surfaced_at = datetime('now'),
-                  surface_snoozed_until = ?,
-                  updated_at = datetime('now')
-              WHERE id = ?`)
-    .run(until, id);
-}
-
-/** Snooze a note from auto-surfacing for N minutes. */
-function snoozeNoteSurface(id, minutes = 30) {
-  const until = new Date(Date.now() + minutes * 60_000).toISOString();
-  getDb()
-    .prepare("UPDATE notes SET surface_snoozed_until = ?, updated_at = datetime('now') WHERE id = ?")
-    .run(until, id);
-}
-
-/** Permanently disable auto-surfacing for this note. */
-function disableNoteSurface(id) {
-  getDb()
-    .prepare("UPDATE notes SET surface_disabled = 1, surface_snoozed_until = NULL, updated_at = datetime('now') WHERE id = ?")
-    .run(id);
-}
-
-/** Re-enable auto-surfacing for a note. */
-function enableNoteSurface(id) {
-  getDb()
-    .prepare("UPDATE notes SET surface_disabled = 0, surface_snoozed_until = NULL, updated_at = datetime('now') WHERE id = ?")
-    .run(id);
-}
-
-/** True if this note is eligible for automatic surfacing. */
-function noteEligibleForSurface(note) {
-  if (note.surface_disabled) return false;
-  if (note.surface_snoozed_until) {
-    const until = new Date(note.surface_snoozed_until);
-    if (!isNaN(until.getTime()) && until > new Date()) return false;
-  }
-  return true;
-}
-
-// ── Note ↔ App links ──────────────────────────────────────────────────────────
-
-/**
- * Link a note to a bundle ID.
- * @param {string} source - 'manual' | 'auto'
- *
- * Upsert semantics:
- *   - If source is 'manual': always sets source to 'manual' (wins over auto) and
- *     clears any existing dismissal for this pair (user's explicit choice wins).
- *   - If source is 'auto': inserts as 'auto' only if no row exists; if a 'manual'
- *     row already exists, leaves it unchanged.
- */
-function linkNoteToApp(noteId, bundleId, source = 'manual') {
-  const db = getDb();
-  if (source === 'manual') {
-    // Clear dismissal so scanner may re-suggest in the future if user re-removes
-    db.prepare('DELETE FROM note_app_link_dismissals WHERE note_id = ? AND bundle_id = ?')
-      .run(noteId, bundleId);
-  }
-  // Upsert: manual always wins; auto only inserts if row absent
-  db.prepare(`
-    INSERT INTO note_app_links (note_id, bundle_id, source) VALUES (?, ?, ?)
-    ON CONFLICT(note_id, bundle_id) DO UPDATE SET
-      source = CASE WHEN excluded.source = 'manual' THEN 'manual' ELSE source END
-  `).run(noteId, bundleId, source);
-}
-
-/**
- * Unlink a note from a bundle ID.
- * If the removed link was 'auto', records a dismissal so the scanner won't re-add it.
- */
-function unlinkNoteFromApp(noteId, bundleId) {
-  const db = getDb();
-  const link = db.prepare('SELECT source FROM note_app_links WHERE note_id = ? AND bundle_id = ?')
-    .get(noteId, bundleId);
-  db.prepare('DELETE FROM note_app_links WHERE note_id = ? AND bundle_id = ?')
-    .run(noteId, bundleId);
-  if (link && link.source === 'auto') {
-    db.prepare('INSERT OR IGNORE INTO note_app_link_dismissals (note_id, bundle_id) VALUES (?, ?)')
-      .run(noteId, bundleId);
-  }
-}
-
-/** Returns [{bundle_id, source}] for the given note. */
-function getLinkedAppsWithSource(noteId) {
-  return getDb()
-    .prepare('SELECT bundle_id, source FROM note_app_links WHERE note_id = ? ORDER BY bundle_id')
-    .all(noteId);
-}
-
-/** @deprecated Kept for internal use where only bundle IDs are needed. */
-function getLinkedBundleIds(noteId) {
-  return getLinkedAppsWithSource(noteId).map(r => r.bundle_id);
-}
-
-/** True if this (note_id, bundle_id) pair has been dismissed by the user. */
-function isDismissed(noteId, bundleId) {
-  return !!getDb()
-    .prepare('SELECT 1 FROM note_app_link_dismissals WHERE note_id = ? AND bundle_id = ?')
-    .get(noteId, bundleId);
-}
-
-/**
- * Apply auto-detected bundle IDs to a note.
- * Skips IDs that are dismissed. Does not remove existing links.
- * @param {number}      noteId
- * @param {Set<string>} detectedIds - from noteAppScan.detectBundleIdsFromText
- */
-function applyAutoLinks(noteId, detectedIds) {
-  for (const bundleId of detectedIds) {
-    if (!isDismissed(noteId, bundleId)) {
-      linkNoteToApp(noteId, bundleId, 'auto');
+  // Do not early-return when `text` exists — older DBs still need completed_at and link fixes.
+  if (!cols.includes('text')) {
+    if (cols.includes('title') || cols.includes('content')) {
+      database.exec("ALTER TABLE notes ADD COLUMN text TEXT NOT NULL DEFAULT ''");
+      database.exec("UPDATE notes SET text = trim(COALESCE(title, '') || '\n' || COALESCE(content, ''))");
+      database.exec("UPDATE notes SET text = content WHERE text = '' AND COALESCE(content, '') <> ''");
+      database.exec("UPDATE notes SET text = title WHERE text = '' AND COALESCE(title, '') <> ''");
+      database.exec("UPDATE notes SET text = '(empty note)' WHERE text = ''");
     }
   }
+
+  if (!cols.includes('completed_at')) {
+    database.exec('ALTER TABLE notes ADD COLUMN completed_at TEXT');
+  }
+
+  const linkCols = database.pragma('table_info(note_app_links)').map((c) => c.name);
+  if (linkCols.includes('bundle_id') && !linkCols.includes('app_key')) {
+    database.exec("ALTER TABLE note_app_links ADD COLUMN app_key TEXT");
+    database.exec("UPDATE note_app_links SET app_key = bundle_id WHERE app_key IS NULL");
+  }
+
+  if (linkCols.includes('app_key')) {
+    database.exec("UPDATE note_app_links SET app_key = 'com.spotify.client' WHERE lower(app_key) = 'spotify'");
+    database.exec(
+      "UPDATE note_app_links SET app_key = 'com.apple.AppStore' WHERE lower(app_key) IN ('app store', 'appstore', 'mac app store')"
+    );
+  }
+  if (linkCols.includes('bundle_id')) {
+    database.exec("UPDATE note_app_links SET bundle_id = 'com.spotify.client' WHERE lower(bundle_id) = 'spotify'");
+    database.exec(
+      "UPDATE note_app_links SET bundle_id = 'com.apple.AppStore' WHERE lower(bundle_id) IN ('app store', 'appstore', 'mac app store')"
+    );
+  }
+
+  const surfaceCols = database.pragma('table_info(note_surface_state)').map((c) => c.name);
+  if (surfaceCols.includes('app_key')) {
+    database.exec("UPDATE note_surface_state SET app_key = 'com.spotify.client' WHERE lower(app_key) = 'spotify'");
+    database.exec(
+      "UPDATE note_surface_state SET app_key = 'com.apple.AppStore' WHERE lower(app_key) IN ('app store', 'appstore', 'mac app store')"
+    );
+  }
+
+  cachedNoteLinkMode = null;
 }
 
-function getNotesByBundleId(bundleId) {
-  return getDb()
-    .prepare(`SELECT n.* FROM notes n
-              JOIN note_app_links l ON l.note_id = n.id
-              WHERE l.bundle_id = ? AND n.deleted_at IS NULL
-              ORDER BY n.updated_at DESC`)
-    .all(bundleId);
+function getNoteLinkMode() {
+  if (cachedNoteLinkMode) return cachedNoteLinkMode;
+  const cols = getDb().pragma('table_info(note_app_links)').map((c) => c.name);
+  const hasApp = cols.includes('app_key');
+  const hasBundle = cols.includes('bundle_id');
+  if (hasApp && hasBundle) cachedNoteLinkMode = 'both';
+  else cachedNoteLinkMode = hasApp ? 'app_key' : 'bundle_id';
+  return cachedNoteLinkMode;
 }
 
-/** Return all notes linked to ANY of the given bundle IDs. */
-function getNotesByAnyBundleId(bundleIds) {
-  if (!bundleIds || bundleIds.length === 0) return [];
-  const placeholders = bundleIds.map(() => '?').join(',');
-  return getDb()
-    .prepare(`SELECT DISTINCT n.* FROM notes n
-              JOIN note_app_links l ON l.note_id = n.id
-              WHERE l.bundle_id IN (${placeholders}) AND n.deleted_at IS NULL
-              ORDER BY n.updated_at DESC`)
-    .all(...bundleIds);
+function normalizeText(input) {
+  return String(input || '').trim();
 }
 
-// ── Folders CRUD ──────────────────────────────────────────────────────────────
-
-function getAllFolders() {
-  return getDb().prepare('SELECT * FROM folders ORDER BY name ASC').all();
+function createNote(text) {
+  const value = normalizeText(text);
+  if (!value) return null;
+  const result = getDb()
+    .prepare("INSERT INTO notes (text, created_at, updated_at) VALUES (?, datetime('now'), datetime('now'))")
+    .run(value);
+  return getNote(result.lastInsertRowid);
 }
 
-function getFolderById(id) {
-  return getDb().prepare('SELECT * FROM folders WHERE id = ?').get(id);
-}
-
-function createFolder({ name }) {
-  const stmt = getDb().prepare('INSERT INTO folders (name) VALUES (?)');
-  const result = stmt.run(name);
-  return getFolderById(result.lastInsertRowid);
-}
-
-function updateFolder(id, { name }) {
-  getDb().prepare('UPDATE folders SET name = ? WHERE id = ?').run(name, id);
-  return getFolderById(id);
-}
-
-function deleteFolder(id) {
+function updateNote(id, text) {
+  const value = normalizeText(text);
+  if (!value) return null;
   getDb()
-    .prepare("UPDATE notes SET folder_id = NULL, updated_at = datetime('now') WHERE folder_id = ? AND deleted_at IS NULL")
-    .run(id);
-  getDb().prepare('DELETE FROM folders WHERE id = ?').run(id);
+    .prepare("UPDATE notes SET text = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(value, id);
+  return getNote(id);
+}
+
+function deleteNote(id) {
+  const nid = Number(id);
+  if (!Number.isFinite(nid) || nid < 1) return false;
+  const result = getDb().prepare('DELETE FROM notes WHERE id = ?').run(nid);
+  return result.changes > 0;
+}
+
+function deleteNotes(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return 0;
+  const normalized = [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))];
+  if (normalized.length === 0) return 0;
+
+  const stmt = getDb().prepare('DELETE FROM notes WHERE id = ?');
+  const tx = getDb().transaction((values) => {
+    let count = 0;
+    for (const id of values) {
+      count += stmt.run(id).changes;
+    }
+    return count;
+  });
+  return tx(normalized);
+}
+
+function completeNote(id) {
+  const nid = Number(id);
+  if (!Number.isFinite(nid) || nid < 1) return false;
+  const result = getDb()
+    .prepare("UPDATE notes SET completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?")
+    .run(nid);
+  return result.changes > 0;
+}
+
+function getNote(id) {
+  return getDb().prepare('SELECT id, text, created_at FROM notes WHERE id = ?').get(id) || null;
+}
+
+function listRecent(limit = 200) {
+  return getDb()
+    .prepare('SELECT id, text, created_at FROM notes ORDER BY datetime(created_at) DESC LIMIT ?')
+    .all(limit);
+}
+
+function searchNotes(query, limit = 20) {
+  const q = normalizeText(query).toLowerCase();
+  if (!q) return listRecent(limit);
+
+  const like = `%${q}%`;
+  return getDb()
+    .prepare(`
+      SELECT id, text, created_at,
+        CASE
+          WHEN lower(text) = ? THEN 100
+          WHEN lower(text) LIKE ? THEN 60
+          ELSE 20
+        END + (
+          CASE
+            WHEN datetime(created_at) >= datetime('now', '-1 day') THEN 15
+            WHEN datetime(created_at) >= datetime('now', '-7 days') THEN 8
+            ELSE 0
+          END
+        ) AS score
+      FROM notes
+      WHERE lower(text) LIKE ?
+      ORDER BY score DESC, datetime(created_at) DESC
+      LIMIT ?
+    `)
+    .all(q, `${q}%`, like, limit);
+}
+
+function linkNoteToApp(noteId, appKey) {
+  const mode = getNoteLinkMode();
+  if (mode === 'both') {
+    getDb()
+      .prepare(
+        'INSERT OR IGNORE INTO note_app_links (note_id, bundle_id, app_key) VALUES (?, ?, ?)'
+      )
+      .run(noteId, appKey, appKey);
+  } else {
+    getDb()
+      .prepare(`INSERT OR IGNORE INTO note_app_links (note_id, ${mode}) VALUES (?, ?)`)
+      .run(noteId, appKey);
+  }
+}
+
+function unlinkNoteFromApp(noteId, appKey) {
+  const mode = getNoteLinkMode();
+  if (mode === 'both') {
+    getDb()
+      .prepare(
+        'DELETE FROM note_app_links WHERE note_id = ? AND (app_key = ? OR bundle_id = ?)'
+      )
+      .run(noteId, appKey, appKey);
+  } else {
+    getDb()
+      .prepare(`DELETE FROM note_app_links WHERE note_id = ? AND ${mode} = ?`)
+      .run(noteId, appKey);
+  }
+}
+
+function getLinksForNote(noteId) {
+  const mode = getNoteLinkMode();
+  if (mode === 'both') {
+    return getDb()
+      .prepare(
+        `SELECT COALESCE(NULLIF(TRIM(app_key), ''), NULLIF(TRIM(bundle_id), '')) AS k
+         FROM note_app_links
+         WHERE note_id = ?
+           AND COALESCE(NULLIF(TRIM(app_key), ''), NULLIF(TRIM(bundle_id), '')) IS NOT NULL
+         ORDER BY k ASC`
+      )
+      .all(noteId)
+      .map((row) => row.k)
+      .filter(Boolean);
+  }
+  return getDb()
+    .prepare(`SELECT ${mode} AS k FROM note_app_links WHERE note_id = ? ORDER BY k ASC`)
+    .all(noteId)
+    .map((row) => row.k)
+    .filter(Boolean);
+}
+
+function getNotesLinkedToApp(appKey, limit = 50) {
+  const mode = getNoteLinkMode();
+  if (mode === 'both') {
+    return getDb()
+      .prepare(`
+        SELECT n.id, n.text, n.created_at
+        FROM notes n
+        INNER JOIN note_app_links l ON l.note_id = n.id
+        WHERE (l.app_key = ? OR l.bundle_id = ?)
+          AND n.completed_at IS NULL
+        ORDER BY datetime(n.created_at) DESC
+        LIMIT ?
+      `)
+      .all(appKey, appKey, limit);
+  }
+  return getDb()
+    .prepare(`
+      SELECT n.id, n.text, n.created_at
+      FROM notes n
+      INNER JOIN note_app_links l ON l.note_id = n.id
+      WHERE l.${mode} = ?
+        AND n.completed_at IS NULL
+      ORDER BY datetime(n.created_at) DESC
+      LIMIT ?
+    `)
+    .all(appKey, limit);
+}
+
+function getKeywordCandidates(keywords, limit = 50) {
+  if (!Array.isArray(keywords) || keywords.length === 0) return [];
+  const likeClauses = keywords.map(() => 'lower(text) LIKE ?').join(' OR ');
+  const values = keywords.map((k) => `%${k.toLowerCase()}%`);
+  return getDb()
+    .prepare(`
+      SELECT id, text, created_at
+      FROM notes
+      WHERE (${likeClauses})
+        AND completed_at IS NULL
+      ORDER BY datetime(created_at) DESC
+      LIMIT ?
+    `)
+    .all(...values, limit);
+}
+
+function getSurfaceState(noteId, appKey) {
+  return getDb()
+    .prepare(`
+      SELECT note_id, app_key, snoozed_until, dismissed, last_surfaced_at, surfaced_day, surfaced_count_day
+      FROM note_surface_state
+      WHERE note_id = ? AND app_key = ?
+    `)
+    .get(noteId, appKey);
+}
+
+function upsertSurfaceState(noteId, appKey) {
+  getDb()
+    .prepare('INSERT OR IGNORE INTO note_surface_state (note_id, app_key) VALUES (?, ?)')
+    .run(noteId, appKey);
+}
+
+function snoozeNote(noteId, appKey, minutes) {
+  upsertSurfaceState(noteId, appKey);
+  const until = new Date(Date.now() + minutes * 60_000).toISOString();
+  getDb()
+    .prepare('UPDATE note_surface_state SET snoozed_until = ?, dismissed = 0 WHERE note_id = ? AND app_key = ?')
+    .run(until, noteId, appKey);
+}
+
+function dismissNote(noteId, appKey) {
+  upsertSurfaceState(noteId, appKey);
+  getDb()
+    .prepare('UPDATE note_surface_state SET dismissed = 1 WHERE note_id = ? AND app_key = ?')
+    .run(noteId, appKey);
+}
+
+function canSurfaceNote(noteId, appKey) {
+  const state = getSurfaceState(noteId, appKey);
+  if (!state) return true;
+  if (state.dismissed) return false;
+
+  if (state.snoozed_until) {
+    const until = new Date(state.snoozed_until);
+    if (!Number.isNaN(until.getTime()) && until > new Date()) return false;
+  }
+  return true;
+}
+
+function recordSurfaced(noteId, appKey) {
+  upsertSurfaceState(noteId, appKey);
+  const today = new Date().toISOString().slice(0, 10);
+  const existing = getSurfaceState(noteId, appKey);
+  const nextCount = existing && existing.surfaced_day === today ? existing.surfaced_count_day + 1 : 1;
+
+  getDb()
+    .prepare(`
+      UPDATE note_surface_state
+      SET last_surfaced_at = datetime('now'),
+          surfaced_day = ?,
+          surfaced_count_day = ?,
+          snoozed_until = NULL
+      WHERE note_id = ? AND app_key = ?
+    `)
+    .run(today, nextCount, noteId, appKey);
 }
 
 module.exports = {
-  getAllNotes, getNoteById, searchNotes, createNote, updateNote, deleteNote, moveNoteToTrash, restoreNote, permanentDeleteNote, moveNoteToFolder,
-  markNoteSurfaced, snoozeNoteSurface, disableNoteSurface, enableNoteSurface, noteEligibleForSurface,
-  linkNoteToApp, unlinkNoteFromApp, getLinkedAppsWithSource, getLinkedBundleIds,
-  isDismissed, applyAutoLinks,
-  getNotesByBundleId, getNotesByAnyBundleId,
-  getAllFolders, getFolderById, createFolder, updateFolder, deleteFolder,
+  createNote,
+  updateNote,
+  deleteNote,
+  deleteNotes,
+  completeNote,
+  getNote,
+  listRecent,
+  searchNotes,
+  linkNoteToApp,
+  unlinkNoteFromApp,
+  getLinksForNote,
+  getNotesLinkedToApp,
+  getKeywordCandidates,
+  canSurfaceNote,
+  recordSurfaced,
+  snoozeNote,
+  dismissNote,
 };

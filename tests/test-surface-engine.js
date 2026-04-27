@@ -1,119 +1,79 @@
 'use strict';
 
 const { test } = require('node:test');
-const assert   = require('node:assert/strict');
+const assert = require('node:assert/strict');
 
-const { resolveBundleIds, getEligibleNotes } = require('../surfaceEngine');
-const { APP_NAME_TO_BUNDLE_ID } = require('../knownApps');
+const { pickSurfacedNotes, resolveAppKey } = require('../surfaceEngine');
+const { KNOWN_APPS } = require('../knownApps');
 
-// ── resolveBundleIds ─────────────────────────────────────────────────────────
-
-test('resolveBundleIds: includes provided bundle ID', () => {
-  const ids = resolveBundleIds('com.apple.MobileSMS', 'Messages');
-  assert.ok(ids.includes('com.apple.MobileSMS'));
-});
-
-test('resolveBundleIds: adds fallback from app name map', () => {
-  // Even with empty bundleId, app name fallback applies
-  const ids = resolveBundleIds('', 'WhatsApp');
-  assert.ok(ids.includes('net.whatsapp.WhatsApp'));
-});
-
-test('resolveBundleIds: no duplicates when bundleId matches fallback', () => {
-  const ids = resolveBundleIds('com.apple.MobileSMS', 'Messages');
-  const unique = new Set(ids);
-  assert.equal(ids.length, unique.size);
-});
-
-test('resolveBundleIds: unknown app with bundleId only', () => {
-  const ids = resolveBundleIds('com.some.App', 'SomeApp');
-  assert.deepEqual(ids, ['com.some.App']);
-});
-
-test('resolveBundleIds: no bundleId, no known name → empty', () => {
-  const ids = resolveBundleIds('', 'UnknownApp');
-  assert.equal(ids.length, 0);
-});
-
-// ── APP_NAME_TO_BUNDLE_ID map ─────────────────────────────────────────────────
-
-test('APP_NAME_TO_BUNDLE_ID contains expected entries', () => {
-  assert.equal(APP_NAME_TO_BUNDLE_ID['Messages'],  'com.apple.MobileSMS');
-  assert.equal(APP_NAME_TO_BUNDLE_ID['WhatsApp'],  'net.whatsapp.WhatsApp');
-  assert.equal(APP_NAME_TO_BUNDLE_ID['Slack'],     'com.tinyspeck.slackmacgap');
-  assert.equal(APP_NAME_TO_BUNDLE_ID['Telegram'],  'ru.keepcoder.Telegram');
-});
-
-// ── getEligibleNotes ─────────────────────────────────────────────────────────
-
-test('getEligibleNotes: returns notes not snoozed and not disabled', () => {
-  const notes = [
-    { id: 1, title: 'A', content: '', surface_disabled: 0, surface_snoozed_until: null },
-    { id: 2, title: 'B', content: '', surface_disabled: 1, surface_snoozed_until: null },
-  ];
-
-  const mockDb = {
-    getNotesByAnyBundleId: () => notes,
-    noteEligibleForSurface: (n) => !n.surface_disabled && (!n.surface_snoozed_until || new Date(n.surface_snoozed_until) <= new Date()),
+function mockDb(overrides = {}) {
+  return {
+    getNotesLinkedToApp: () => [],
+    getKeywordCandidates: () => [],
+    canSurfaceNote: () => true,
+    recordSurfaced: () => {},
+    ...overrides,
   };
+}
 
-  const eligible = getEligibleNotes('com.apple.MobileSMS', 'Messages', mockDb);
-  assert.equal(eligible.length, 1);
-  assert.equal(eligible[0].id, 1);
+test('resolveAppKey: prefers bundle id from OS', () => {
+  assert.equal(resolveAppKey('com.spotify.client', 'Anything'), 'com.spotify.client');
 });
 
-test('getEligibleNotes: respects active snooze', () => {
-  const future = new Date(Date.now() + 60_000).toISOString();
-  const notes = [
-    { id: 1, title: 'A', content: '', surface_disabled: 0, surface_snoozed_until: future },
-  ];
-
-  const mockDb = {
-    getNotesByAnyBundleId: () => notes,
-    noteEligibleForSurface: (n) => !n.surface_disabled && (!n.surface_snoozed_until || new Date(n.surface_snoozed_until) <= new Date()),
-  };
-
-  const eligible = getEligibleNotes('com.apple.MobileSMS', 'Messages', mockDb);
-  assert.equal(eligible.length, 0);
+test('resolveAppKey: maps known display name when bundle id missing', () => {
+  assert.equal(resolveAppKey('', 'Spotify'), 'com.spotify.client');
 });
 
-test('getEligibleNotes: expired snooze is eligible', () => {
-  const past = new Date(Date.now() - 60_000).toISOString();
-  const notes = [
-    { id: 3, title: 'C', content: '', surface_disabled: 0, surface_snoozed_until: past },
-  ];
-
-  const mockDb = {
-    getNotesByAnyBundleId: () => notes,
-    noteEligibleForSurface: (n) => !n.surface_disabled && (!n.surface_snoozed_until || new Date(n.surface_snoozed_until) <= new Date()),
-  };
-
-  const eligible = getEligibleNotes('', 'Messages', mockDb);
-  assert.equal(eligible.length, 1);
+test('resolveAppKey: case-insensitive display name', () => {
+  assert.equal(resolveAppKey('', 'spotify'), 'com.spotify.client');
 });
 
-test('getEligibleNotes: no bundle IDs → empty', () => {
-  const mockDb = {
-    getNotesByAnyBundleId: () => [],
-    noteEligibleForSurface: () => true,
-  };
-  const eligible = getEligibleNotes('', 'UnknownApp', mockDb);
-  assert.equal(eligible.length, 0);
+test('resolveAppKey: unknown name and no bundle → empty', () => {
+  assert.equal(resolveAppKey('', 'UnknownApp'), '');
 });
 
-// ── Source-agnostic surfacing ─────────────────────────────────────────────────
-// getNotesByAnyBundleId does not filter by source — a link is a link.
+test('pickSurfacedNotes: merges linked + keyword hits, dedupes by note id (linked wins)', () => {
+  const note = { id: 1, text: 'hello slack', created_at: '2026-01-01' };
+  const db = mockDb({
+    getNotesLinkedToApp: () => [note],
+    getKeywordCandidates: () => [{ ...note, text: 'slack ping' }],
+    recordSurfaced: () => {},
+  });
+  const { notes } = pickSurfacedNotes({
+    bundleId: 'com.tinyspeck.slackmacgap',
+    appName: 'Slack',
+    db,
+    catalog: KNOWN_APPS,
+    limit: 5,
+  });
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].id, 1);
+});
 
-test('auto-linked note is eligible for surfacing (source is irrelevant to eligibility)', () => {
-  const notes = [
-    { id: 10, title: 'Auto', content: '', surface_disabled: 0, surface_snoozed_until: null },
-  ];
-  const mockDb = {
-    // DB query returns notes regardless of link source
-    getNotesByAnyBundleId: () => notes,
-    noteEligibleForSurface: (n) => !n.surface_disabled && !n.surface_snoozed_until,
-  };
-  const eligible = getEligibleNotes('com.tinyspeck.slackmacgap', 'Slack', mockDb);
-  assert.equal(eligible.length, 1);
-  assert.equal(eligible[0].id, 10);
+test('pickSurfacedNotes: respects canSurfaceNote', () => {
+  const db = mockDb({
+    getNotesLinkedToApp: () => [{ id: 2, text: 'nope', created_at: '2026-01-01' }],
+    canSurfaceNote: () => false,
+  });
+  const { notes } = pickSurfacedNotes({
+    bundleId: 'com.spotify.client',
+    appName: 'Spotify',
+    db,
+    catalog: KNOWN_APPS,
+    limit: 5,
+  });
+  assert.equal(notes.length, 0);
+});
+
+test('pickSurfacedNotes: empty when app cannot be resolved', () => {
+  const db = mockDb();
+  const out = pickSurfacedNotes({
+    bundleId: '',
+    appName: 'TotallyUnknown',
+    db,
+    catalog: KNOWN_APPS,
+    limit: 3,
+  });
+  assert.equal(out.appKey, '');
+  assert.equal(out.notes.length, 0);
 });

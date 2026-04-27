@@ -1,9 +1,12 @@
 'use strict';
 
 let autoDismissMs = 10000;
+let activeAppKey = '';
 
-window.overlay.onShow((notes, cfg) => {
-  if (cfg && cfg.autoDismissMs) autoDismissMs = cfg.autoDismissMs;
+window.overlay.onShow((payload) => {
+  const notes = payload.notes || [];
+  activeAppKey = payload.appKey || '';
+  if (payload.autoDismissMs) autoDismissMs = payload.autoDismissMs;
 
   const bar = document.getElementById('progress-bar');
   bar.style.animation = 'none';
@@ -14,16 +17,16 @@ window.overlay.onShow((notes, cfg) => {
   container.innerHTML = '';
 
   const list = Array.isArray(notes) ? notes : [];
-  for (const note of list.slice(0, 3)) {
+  for (const note of list) {
     const card = document.createElement('div');
     card.className = 'note-card';
     card.innerHTML = `
-      <div class="note-card-title">${esc(note.title || 'Untitled')}</div>
-      <div class="note-card-snippet">${esc(note.snippet || '')}</div>
+      <div class="note-card-title">${esc((note.text || '').split('\n')[0] || 'Note')}</div>
+      <div class="note-card-snippet">${esc((note.text || '').slice(0, 180))}</div>
       <div class="note-card-actions">
         <button class="action-btn open"    data-id="${note.id}">Open</button>
         <button class="action-btn snooze"  data-id="${note.id}">Snooze 30m</button>
-        <button class="action-btn disable" data-id="${note.id}">Don't surface</button>
+        <button class="action-btn complete" data-id="${note.id}">Mark as completed</button>
       </div>
     `;
     container.appendChild(card);
@@ -43,8 +46,8 @@ document.getElementById('notes-container').addEventListener('click', (e) => {
   if (!btn) return;
   const id = Number(btn.dataset.id);
   if (btn.classList.contains('open')) window.overlay.openNote(id);
-  if (btn.classList.contains('snooze')) window.overlay.snooze(id, 30);
-  if (btn.classList.contains('disable')) window.overlay.disable(id);
+  if (btn.classList.contains('snooze')) window.overlay.snooze(id, activeAppKey, 30);
+  if (btn.classList.contains('complete')) window.overlay.complete(id);
 });
 
 function esc(str) {
