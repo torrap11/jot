@@ -1,0 +1,222 @@
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+function applyEnvFile(filePath) {
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8');
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq <= 0) continue;
+      const key = trimmed.slice(0, eq).trim();
+      let val = trimmed.slice(eq + 1).trim();
+      if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+      ) {
+        val = val.slice(1, -1);
+      }
+      if (key) process.env[key] = val;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Merge env files in order; later files override keys from earlier ones. */
+function loadDotenv(userDataDir) {
+  const files = [path.join(__dirname, '.env'), path.join(process.cwd(), '.env')];
+  if (userDataDir) files.push(path.join(userDataDir, '.env'));
+  for (const filePath of files) applyEnvFile(filePath);
+}
+
+function buildOrganizeSnapshot(database) {
+  const folders = database.listFolders();
+  const notes = database.listRecent(500, 'all').map((n) => ({
+    id: n.id,
+    preview: String(n.text || '').split('\n')[0].slice(0, 280),
+    folderId: n.folder_id ?? null,
+  }));
+  return { folders, notes };
+}
+
+const ORGANIZE_SYSTEM = `You help organize notes into folders for the app "Proactive Recall".
+The user sends a JSON snapshot: "folders" [{id, name}] and "notes" [{id, preview, folderId}].
+
+Reply with a single JSON object only (no markdown fences). Shape:
+{"reply":"<string — short explanation for the user>","plan":[...]}
+
+"plan" is an array of operations in execution order. Put all createFolder steps before moveNote steps that use new folder names.
+
+Allowed operations:
+- {"op":"createFolder","name":"<string>"}
+- {"op":"moveNote","noteId":<number>,"folderId":<number>} — use an id from snapshot.folders
+- {"op":"moveNote","noteId":<number>,"folderName":"<string>"} — name must match a folder you created earlier in plan or an existing folder name
+- {"op":"moveNote","noteId":<number>,"unfiled":true}
+
+Use only note ids from the snapshot. If the user only chats or asks questions, use "plan": [].
+Keep "reply" concise.`;
+
+function extractJsonObject(text) {
+  const s = String(text || '').trim();
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const body = fence ? fence[1].trim() : s;
+  const start = body.indexOf('{');
+  const end = body.lastIndexOf('}');
+  if (start < 0 || end <= start) throw new Error('No JSON object in model response');
+  return JSON.parse(body.slice(start, end + 1));
+}
+
+async function callAnthropic({ apiKey, model, system, messages }) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 4096,
+      system,
+      messages,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = data.error?.message || data.message || res.statusText;
+    throw new Error(msg || `Anthropic API error ${res.status}`);
+  }
+  const block = (data.content || []).find((b) => b.type === 'text');
+  return block ? block.text : '';
+}
+
+async function organizeChat(database, { history, userMessage }) {
+  loadDotenv();
+  const apiKey = (process.env.ANTHROPIC_API_KEY || '').trim();
+  const model = process.env.PROACTIVE_RECALL_MODEL || 'claude-sonnet-4-6';
+  if (!apiKey) {
+    return {
+      error:
+        'Missing ANTHROPIC_API_KEY. Create a .env file with ANTHROPIC_API_KEY=sk-ant-... in your proactive-recall project folder, or in the app data folder (e.g. ~/Library/Application Support/Electron/.env when running npm start). Restart the app after saving.',
+    };
+  }
+  const snapshot = buildOrganizeSnapshot(database);
+  const trimmedHistory = (history || [])
+    .filter((m) => m && (m.role === 'user' || m.role === 'assistant'))
+    .slice(-8)
+    .map((m) => ({ role: m.role, content: String(m.content || '') }));
+  const payload = `${userMessage}\n\n--- current workspace (JSON) ---\n${JSON.stringify(snapshot)}`;
+  const messages = [...trimmedHistory, { role: 'user', content: payload }];
+  const text = await callAnthropic({
+    apiKey,
+    model,
+    system: ORGANIZE_SYSTEM,
+    messages,
+  });
+  let parsed;
+  try {
+    parsed = extractJsonObject(text);
+  } catch (e) {
+    return { error: `Could not parse AI response: ${e.message}`, raw: text };
+  }
+  if (parsed.reply == null) {
+    return { error: 'Invalid response shape (missing reply)', raw: text };
+  }
+  const plan = Array.isArray(parsed.plan) ? parsed.plan : [];
+  return { reply: String(parsed.reply), plan, raw: text };
+}
+
+function sortPlan(plan) {
+  const list = Array.isArray(plan) ? plan : [];
+  const creates = list.filter((p) => p && p.op === 'createFolder');
+  const moves = list.filter((p) => p && p.op === 'moveNote');
+  return [...creates, ...moves];
+}
+
+function applyOrganizePlan(database, plan) {
+  const sorted = sortPlan(plan);
+  const noteRows = database.listRecent(10000, 'all');
+  const validNoteIds = new Set(noteRows.map((n) => n.id));
+  const applied = [];
+  const errors = [];
+
+  let folders = database.listFolders();
+
+  for (const step of sorted) {
+    if (step.op === 'createFolder') {
+      const name = String(step.name || '').trim();
+      if (!name) {
+        errors.push('createFolder: empty name');
+        continue;
+      }
+      const exists = folders.some((f) => f.name.toLowerCase() === name.toLowerCase());
+      if (exists) {
+        applied.push({ op: 'createFolder', name, skipped: true });
+        continue;
+      }
+      const created = database.createFolder(name);
+      if (created) {
+        folders = database.listFolders();
+        applied.push({ op: 'createFolder', id: created.id, name: created.name });
+      } else {
+        errors.push(`createFolder: failed for "${name}" (duplicate name?)`);
+      }
+      continue;
+    }
+    if (step.op === 'moveNote') {
+      const noteId = Number(step.noteId);
+      if (!Number.isFinite(noteId) || !validNoteIds.has(noteId)) {
+        errors.push(`moveNote: invalid noteId ${step.noteId}`);
+        continue;
+      }
+      if (step.unfiled === true) {
+        database.setNoteFolder(noteId, 'unfiled');
+        applied.push({ op: 'moveNote', noteId, unfiled: true });
+        continue;
+      }
+      const folderIdRaw = step.folderId;
+      if (folderIdRaw != null && folderIdRaw !== '') {
+        const folderId = Number(folderIdRaw);
+        if (!Number.isFinite(folderId)) {
+          errors.push(`moveNote: invalid folderId for note ${noteId}`);
+          continue;
+        }
+        folders = database.listFolders();
+        const exists = folders.some((f) => f.id === folderId);
+        if (!exists) {
+          errors.push(`moveNote: folderId ${folderId} not found`);
+          continue;
+        }
+        database.setNoteFolder(noteId, folderId);
+        applied.push({ op: 'moveNote', noteId, folderId });
+        continue;
+      }
+      const folderName = String(step.folderName || '').trim();
+      if (folderName) {
+        folders = database.listFolders();
+        const hit = folders.find((f) => f.name.toLowerCase() === folderName.toLowerCase());
+        if (!hit) {
+          errors.push(`moveNote: folderName "${folderName}" not found`);
+          continue;
+        }
+        database.setNoteFolder(noteId, hit.id);
+        applied.push({ op: 'moveNote', noteId, folderId: hit.id, folderName });
+        continue;
+      }
+      errors.push(`moveNote: missing target for note ${noteId}`);
+    }
+  }
+  return { applied, errors };
+}
+
+module.exports = {
+  loadDotenv,
+  buildOrganizeSnapshot,
+  organizeChat,
+  applyOrganizePlan,
+};

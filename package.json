@@ -24,6 +24,7 @@
       "surfaceEngine.js",
       "noteAppScan.js",
       "knownApps.js",
+      "aiOrganize.js",
       "renderer/**/*",
       "overlay/**/*",
       "node_modules/**/*"

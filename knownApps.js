@@ -15,6 +15,7 @@ const KNOWN_APPS = [
   },
   { name: 'Safari', bundleId: 'com.apple.Safari', aliases: ['browser', 'web', 'safari'] },
   { name: 'Google Chrome', bundleId: 'com.google.Chrome', aliases: ['browser', 'chrome', 'web'] },
+  { name: 'ChatGPT Atlas', bundleId: 'com.openai.atlas', aliases: ['chatgpt', 'atlas', 'chatgpt atlas', 'openai'] },
   { name: 'Spotify', bundleId: 'com.spotify.client', aliases: ['spotify', 'music'] },
   { name: 'Visual Studio Code', bundleId: 'com.microsoft.VSCode', aliases: ['code', 'vscode', 'debug', 'repo'] },
 ];

@@ -69,6 +69,7 @@
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 8px 10px;
+      cursor: pointer;
     }
 
     .note-card-title {
@@ -94,7 +95,34 @@
 
     .note-card-actions {
       display: flex;
+      flex-wrap: wrap;
       gap: 5px;
+      align-items: center;
+    }
+
+    .snooze-wrap {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      flex: 1 1 120px;
+      min-width: 0;
+    }
+
+    .snooze-input {
+      width: 48px;
+      flex-shrink: 0;
+      padding: 4px 5px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 11px;
+      text-align: center;
+    }
+
+    .snooze-input:focus {
+      outline: none;
+      border-color: var(--accent);
     }
 
     .action-btn {
@@ -108,7 +136,7 @@
 
     .action-btn.open    { background: #4f9cf9; color: #fff; }
     .action-btn.open:hover { background: #3a7bd5; }
-    .action-btn.snooze  { background: var(--bg); border: 1px solid var(--border); color: var(--dim); }
+    .action-btn.snooze  { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border); color: var(--dim); }
     .action-btn.snooze:hover  { color: var(--text); }
     .action-btn.complete { background: var(--bg); border: 1px solid var(--border); color: var(--dim); }
     .action-btn.complete:hover { color: #e05252; border-color: #e05252; }

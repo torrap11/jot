@@ -16,6 +16,17 @@ async function submit() {
   window.mvp.hideCapture();
 }
 
+async function handleEscape() {
+  const hasText = input.value.trim().length > 0;
+  if (hasText) {
+    await submit();
+    return;
+  }
+  input.value = '';
+  appInput.value = '';
+  window.mvp.hideCapture();
+}
+
 input.addEventListener('keydown', async (event) => {
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault();
@@ -24,8 +35,7 @@ input.addEventListener('keydown', async (event) => {
   }
   if (event.key === 'Escape') {
     event.preventDefault();
-    input.value = '';
-    window.mvp.hideCapture();
+    await handleEscape();
   }
 });
 
@@ -37,9 +47,7 @@ appInput.addEventListener('keydown', async (event) => {
   }
   if (event.key === 'Escape') {
     event.preventDefault();
-    input.value = '';
-    appInput.value = '';
-    window.mvp.hideCapture();
+    await handleEscape();
   }
 });
 

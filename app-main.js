@@ -6,13 +6,16 @@
  * frontmost-app polling → surfaceEngine → overlay.
  */
 
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, clipboard } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, clipboard, dialog } = require('electron');
+const fs = require('fs/promises');
 const path = require('path');
+const { pathToFileURL } = require('url');
 
 const db = require('./database');
 const watcher = require('./appWatcher');
 const surface = require('./surfaceEngine');
 const { KNOWN_APPS, BUNDLE_ID_TO_NAME, resolveInputToBundleId } = require('./knownApps');
+const aiOrganize = require('./aiOrganize');
 
 const PRELOAD_MAIN = path.join(__dirname, 'preload.js');
 
@@ -28,6 +31,66 @@ const APP_CONFIG = {
   overlayDismissMs: 10000,
   defaultSnoozeMinutes: 30,
 };
+
+const MIME_TO_EXT = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+};
+
+async function ensureAttachmentDir() {
+  const dir = path.join(app.getPath('userData'), 'note-images');
+  await fs.mkdir(dir, { recursive: true });
+  return dir;
+}
+
+function toImagePayload(row) {
+  return {
+    id: row.id,
+    note_id: row.note_id,
+    created_at: row.created_at,
+    image_path: row.image_path,
+    file_url: pathToFileURL(row.image_path).href,
+  };
+}
+
+function parseImageDataUrl(dataUrl) {
+  const match = String(dataUrl || '').match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return null;
+  const mime = match[1].toLowerCase();
+  const base64 = match[2];
+  const ext = MIME_TO_EXT[mime];
+  if (!ext) return null;
+  return { mime, ext, buffer: Buffer.from(base64, 'base64') };
+}
+
+function safeExtFromPath(inputPath) {
+  const ext = path.extname(String(inputPath || '')).toLowerCase();
+  if (ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.gif' || ext === '.webp') {
+    return ext === '.jpeg' ? '.jpg' : ext;
+  }
+  return '.png';
+}
+
+async function saveImageBuffer(noteId, buffer, ext) {
+  const dir = await ensureAttachmentDir();
+  const fileName = `note-${noteId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+  const fullPath = path.join(dir, fileName);
+  await fs.writeFile(fullPath, buffer);
+  return fullPath;
+}
+
+async function cleanupImagePaths(paths) {
+  for (const imagePath of paths || []) {
+    try {
+      await fs.unlink(imagePath);
+    } catch (_error) {
+      // Ignore missing files or cleanup errors.
+    }
+  }
+}
 
 function rendererWebPreferences() {
   return {
@@ -57,8 +120,8 @@ function createCaptureWindow() {
 
 function createSearchWindow() {
   searchWin = new BrowserWindow({
-    width: 720,
-    height: 580,
+    width: 760,
+    height: 640,
     show: false,
     title: 'Proactive Recall Search',
     webPreferences: rendererWebPreferences(),
@@ -97,12 +160,23 @@ function getOverlayWindow() {
   return overlayWin;
 }
 
+function centerWindowOnCursorDisplay(win) {
+  if (!win || win.isDestroyed()) return;
+  const pointer = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(pointer);
+  const area = display.workArea;
+  const bounds = win.getBounds();
+  const x = Math.round(area.x + (area.width - bounds.width) / 2);
+  const y = Math.round(area.y + (area.height - bounds.height) / 2);
+  win.setPosition(x, y);
+}
+
 function showCaptureWindow() {
   if (!captureWin || captureWin.isDestroyed()) createCaptureWindow();
 
   const present = () => {
     if (!captureWin || captureWin.isDestroyed()) return;
-    captureWin.center();
+    centerWindowOnCursorDisplay(captureWin);
     captureWin.show();
     captureWin.focus();
     captureWin.webContents.send('capture:focus');
@@ -121,6 +195,7 @@ function showSearchWindow(payload = {}) {
 
   const present = () => {
     if (!searchWin || searchWin.isDestroyed()) return;
+    centerWindowOnCursorDisplay(searchWin);
     searchWin.show();
     searchWin.focus();
     searchWin.webContents.send('search:focus', payload);
@@ -200,18 +275,31 @@ function registerIpc() {
     if (note) notifySearchNotesChanged();
     return note;
   });
-  ipcMain.handle('search:query', (_event, query) => db.searchNotes(query, 20));
-  ipcMain.handle('notes:recent', () => db.listRecent(20));
+  ipcMain.handle('search:query', (_event, query, folderId) => db.searchNotes(query, 20, folderId));
+  ipcMain.handle('notes:recent', (_event, folderId) => db.listRecent(20, folderId));
   ipcMain.handle('note:get', (_event, noteId) => db.getNote(noteId));
   ipcMain.handle('note:update', (_event, noteId, text) => db.updateNote(noteId, text));
+  ipcMain.handle('note:set-folder', (_event, noteId, folderId) => {
+    const note = db.setNoteFolder(noteId, folderId);
+    if (note) notifySearchNotesChanged();
+    return note;
+  });
   ipcMain.handle('note:delete', (_event, noteId) => {
+    const imagePaths = db.getImagePathsForNote(noteId);
     const ok = db.deleteNote(noteId);
-    if (ok) notifySearchNotesChanged();
+    if (ok) {
+      void cleanupImagePaths(imagePaths);
+      notifySearchNotesChanged();
+    }
     return ok;
   });
   ipcMain.handle('note:delete-many', (_event, noteIds) => {
+    const imagePaths = db.getImagePathsForNotes(noteIds);
     const deletedCount = db.deleteNotes(noteIds);
-    if (deletedCount > 0) notifySearchNotesChanged();
+    if (deletedCount > 0) {
+      void cleanupImagePaths(imagePaths);
+      notifySearchNotesChanged();
+    }
     return deletedCount;
   });
 
@@ -227,10 +315,75 @@ function registerIpc() {
     return db.getLinksForNote(noteId);
   });
   ipcMain.handle('apps:list', () => KNOWN_APPS.map((entry) => ({ name: entry.name, bundleId: entry.bundleId })));
+  ipcMain.handle('folders:list', () => db.listFolders());
+  ipcMain.handle('folders:diagram', () => db.getFolderDiagram());
+  ipcMain.handle('folders:create', (_event, name) => {
+    const folder = db.createFolder(name);
+    if (folder) notifySearchNotesChanged();
+    return folder;
+  });
   ipcMain.handle('apps:resolve', (_event, raw) => resolveInputToBundleId(raw));
   ipcMain.handle('clipboard:copy', (_event, text) => {
     clipboard.writeText(String(text || ''));
     return true;
+  });
+  ipcMain.handle('note-images:list', (_event, noteId) => db.listNoteImages(noteId).map(toImagePayload));
+  ipcMain.handle('note-images:add-from-data-url', async (_event, noteId, dataUrl) => {
+    const note = db.getNote(noteId);
+    if (!note) return null;
+    const parsed = parseImageDataUrl(dataUrl);
+    if (!parsed || !parsed.buffer || parsed.buffer.length === 0) return null;
+    const savedPath = await saveImageBuffer(noteId, parsed.buffer, parsed.ext);
+    const row = db.addNoteImage(noteId, savedPath);
+    notifySearchNotesChanged();
+    return toImagePayload(row);
+  });
+  ipcMain.handle('note-images:add-from-picker', async (event, noteId) => {
+    const note = db.getNote(noteId);
+    if (!note) return [];
+    const parentWindow = BrowserWindow.fromWebContents(event.sender) || searchWin || null;
+    const result = await dialog.showOpenDialog(parentWindow, {
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
+    });
+    if (result.canceled || !result.filePaths || result.filePaths.length === 0) return [];
+
+    const created = [];
+    for (const srcPath of result.filePaths) {
+      const ext = safeExtFromPath(srcPath);
+      const dir = await ensureAttachmentDir();
+      const fileName = `note-${noteId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+      const destPath = path.join(dir, fileName);
+      await fs.copyFile(srcPath, destPath);
+      const row = db.addNoteImage(noteId, destPath);
+      created.push(toImagePayload(row));
+    }
+    if (created.length > 0) notifySearchNotesChanged();
+    return created;
+  });
+  ipcMain.handle('note-images:remove', async (_event, noteId, imageId) => {
+    const removed = db.removeNoteImage(noteId, imageId);
+    if (!removed) return false;
+    await cleanupImagePaths([removed.image_path]);
+    notifySearchNotesChanged();
+    return true;
+  });
+
+  ipcMain.handle('ai:organize-chat', async (_event, payload) => {
+    const userMessage = String((payload && payload.userMessage) || '').trim();
+    if (!userMessage) return { error: 'Empty message' };
+    const history = Array.isArray(payload && payload.history) ? payload.history : [];
+    try {
+      return await aiOrganize.organizeChat(db, { history, userMessage });
+    } catch (e) {
+      return { error: e.message || String(e) };
+    }
+  });
+  ipcMain.handle('ai:organize-apply', (_event, plan) => {
+    const result = aiOrganize.applyOrganizePlan(db, plan);
+    const prunedFolders = db.pruneEmptyFolders();
+    if (result.applied.length > 0 || prunedFolders > 0) notifySearchNotesChanged();
+    return { ...result, prunedFolders };
   });
 
   ipcMain.on('window:hide-capture', hideCaptureWindow);
@@ -259,6 +412,7 @@ function registerIpc() {
 }
 
 app.whenReady().then(() => {
+  aiOrganize.loadDotenv(app.getPath('userData'));
   createCaptureWindow();
   createSearchWindow();
   registerShortcuts();

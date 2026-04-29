@@ -7,9 +7,15 @@ const state = {
   listFocusId: null,
   selectedIds: new Set(),
   apps: [],
+  folders: [],
+  folderFilter: 'all',
+  customPrompt: '',
 };
 
 const queryInput = document.getElementById('query');
+const promptInputEl = document.getElementById('prompt-input');
+const promptConfirmBtn = document.getElementById('prompt-confirm-btn');
+const folderDiagramEl = document.getElementById('folder-diagram');
 const bulkActionsEl = document.getElementById('bulk-actions');
 const selectedCountEl = document.getElementById('selected-count');
 const deleteSelectedBtn = document.getElementById('delete-selected-btn');
@@ -17,13 +23,118 @@ const resultsEl = document.getElementById('results');
 const editorEl = document.getElementById('editor');
 const editorDateEl = document.getElementById('editor-date');
 const editorTextEl = document.getElementById('editor-text');
+const closeEditorBtn = document.getElementById('close-editor-btn');
 const copyBtn = document.getElementById('copy-note-btn');
-const deleteNoteBtn = document.getElementById('delete-note-btn');
+const attachImageBtn = document.getElementById('attach-image-btn');
+const editorFolderSelect = document.getElementById('editor-folder-select');
 const appSelect = document.getElementById('app-select');
 const linkBtn = document.getElementById('link-btn');
 const linksEl = document.getElementById('links');
+const noteImagesEl = document.getElementById('note-images');
+const organizePanelEl = document.getElementById('organize-panel');
+const organizeMessagesEl = document.getElementById('organize-messages');
+const organizeInputEl = document.getElementById('organize-input');
+const organizeComposeEl = document.querySelector('.organize-compose');
+const organizeSendBtn = document.getElementById('organize-send');
+const organizeApplyBtn = document.getElementById('organize-apply');
+const organizePlanRowEl = document.getElementById('organize-plan-row');
+const organizePlanEditEl = document.getElementById('organize-plan-edit');
+const organizeUpdatePlanBtn = document.getElementById('organize-update-plan');
 
 let saveTimer = null;
+let organizeHistory = [];
+let organizePendingPlan = null;
+/** User message text that produced the current `organizePendingPlan` (for edit-then-Apply). */
+let organizePlanUserText = null;
+const linkHistory = {
+  undo: [],
+  redo: [],
+};
+function areSameStringLists(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function resetLinkHistory() {
+  linkHistory.undo = [];
+  linkHistory.redo = [];
+}
+
+function pushLinkHistoryEntry(noteId, before, after) {
+  if (!noteId) return;
+  if (areSameStringLists(before, after)) return;
+  linkHistory.undo.push({ noteId, before: [...before], after: [...after] });
+  linkHistory.redo = [];
+}
+
+async function applyLinksSnapshot(noteId, targetLinks) {
+  if (!noteId) return;
+  const currentLinks = await window.mvp.getLinks(noteId);
+  const currentSet = new Set(currentLinks);
+  const targetSet = new Set(targetLinks);
+
+  for (const appKey of currentSet) {
+    if (!targetSet.has(appKey)) await window.mvp.removeLink(noteId, appKey);
+  }
+  for (const appKey of targetSet) {
+    if (!currentSet.has(appKey)) await window.mvp.addLink(noteId, appKey);
+  }
+}
+
+async function undoLinkChange() {
+  if (!state.activeId) return;
+  const entry = linkHistory.undo[linkHistory.undo.length - 1];
+  if (!entry || entry.noteId !== state.activeId) return;
+  linkHistory.undo.pop();
+  await applyLinksSnapshot(state.activeId, entry.before);
+  linkHistory.redo.push(entry);
+  await renderLinks();
+}
+
+async function redoLinkChange() {
+  if (!state.activeId) return;
+  const entry = linkHistory.redo[linkHistory.redo.length - 1];
+  if (!entry || entry.noteId !== state.activeId) return;
+  linkHistory.redo.pop();
+  await applyLinksSnapshot(state.activeId, entry.after);
+  linkHistory.undo.push(entry);
+  await renderLinks();
+}
+
+function isTypingTarget(target) {
+  if (!target || !(target instanceof Element)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
+function isUndoShortcut(event) {
+  const modifier = event.metaKey || event.ctrlKey;
+  return modifier && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'z';
+}
+
+function isRedoShortcut(event) {
+  const modifier = event.metaKey || event.ctrlKey;
+  return modifier && !event.altKey && event.shiftKey && event.key.toLowerCase() === 'z';
+}
+
+function closeEditor() {
+  clearTimeout(saveTimer);
+  state.activeId = null;
+  resetLinkHistory();
+  editorEl.classList.add('hidden');
+  editorTextEl.value = '';
+  editorFolderSelect.value = 'unfiled';
+  linksEl.innerHTML = '';
+  noteImagesEl.innerHTML = '';
+  renderResults();
+  if (state.listFocusId != null) focusListRow(state.listFocusId);
+  else queryInput.focus();
+}
 
 function focusListRow(noteId) {
   if (noteId == null) return;
@@ -46,14 +157,54 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;');
 }
 
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/"/g, '&quot;');
+}
+
 function formatDate(iso) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+function formatTimeOnly(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function localDayKey(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 async function loadApps() {
   state.apps = await window.mvp.listApps();
+}
+
+async function loadFolders() {
+  state.folders = await window.mvp.listFolders();
+  renderFolderControls();
+}
+
+function folderLabel(folderId) {
+  if (folderId == null) return 'Unfiled';
+  const id = Number(folderId);
+  const hit = state.folders.find((f) => Number(f.id) === id);
+  return hit ? hit.name : 'Folder';
+}
+
+function renderFolderControls() {
+  const editorOptions = ['<option value="unfiled">Unfiled</option>'];
+  for (const folder of state.folders) {
+    const safeName = escapeHtml(folder.name);
+    editorOptions.push(`<option value="${folder.id}">${safeName}</option>`);
+  }
+  editorFolderSelect.innerHTML = editorOptions.join('');
 }
 
 function labelForAppKey(bundleId) {
@@ -61,8 +212,171 @@ function labelForAppKey(bundleId) {
   return hit ? hit.name : bundleId;
 }
 
+function renderFolderDiagramHtml(diagram) {
+  const root = String(diagram?.rootLabel || 'All notes');
+  const unfiledCount = Number(diagram?.unfiledCount) || 0;
+  const folders = Array.isArray(diagram?.folders) ? diagram.folders : [];
+  const folderTotal = folders.reduce((sum, folder) => sum + (Number(folder.noteCount) || 0), 0);
+  const totalCount = folderTotal + unfiledCount;
+  const items = [];
+  const rootActive = state.folderFilter === 'all' ? ' active' : '';
+  items.push(`
+    <button type="button" class="folder-node${rootActive}" data-folder-filter="all">
+      <span class="folder-node-prefix">•</span>
+      <span class="folder-node-name">${escapeHtml(root)}</span>
+      <span class="folder-node-count">(${totalCount})</span>
+    </button>
+  `);
+  if (folders.length === 0) {
+    items.push(`
+      <div class="folder-node empty">
+        <span class="folder-node-prefix">└─</span>
+        <span class="folder-node-name">(no folders yet)</span>
+      </div>
+    `);
+  } else {
+    folders.forEach((folder, idx) => {
+      const branch = idx === folders.length - 1 ? '└─' : '├─';
+      const count = Number(folder.noteCount) || 0;
+      const active = String(state.folderFilter) === String(folder.id) ? ' active' : '';
+      items.push(`
+        <button type="button" class="folder-node${active}" data-folder-filter="${folder.id}">
+          <span class="folder-node-prefix">${branch}</span>
+          <span class="folder-node-name">${escapeHtml(folder.name)}</span>
+          <span class="folder-node-count">(${count})</span>
+        </button>
+      `);
+    });
+  }
+  const unfiledActive = state.folderFilter === 'unfiled' ? ' active' : '';
+  items.push(`
+    <button type="button" class="folder-node${unfiledActive}" data-folder-filter="unfiled">
+      <span class="folder-node-prefix">•</span>
+      <span class="folder-node-name">Unfiled</span>
+      <span class="folder-node-count">(${unfiledCount})</span>
+    </button>
+  `);
+  return items.join('');
+}
+
+async function refreshFolderDiagram() {
+  if (!folderDiagramEl) return;
+  try {
+    const diagram = await window.mvp.getFolderDiagram();
+    folderDiagramEl.innerHTML = `
+      <div class="folder-diagram-title">Folder structure diagram</div>
+      <div class="folder-diagram-tree">${renderFolderDiagramHtml(diagram)}</div>
+    `;
+    folderDiagramEl.classList.remove('hidden');
+  } catch (error) {
+    folderDiagramEl.innerHTML = `
+      <div class="folder-diagram-title">Folder structure diagram</div>
+      <div class="folder-diagram-tree">Unable to load (${escapeHtml(error.message || String(error))})</div>
+    `;
+    folderDiagramEl.classList.remove('hidden');
+  }
+}
+
+folderDiagramEl.addEventListener('click', (event) => {
+  const btn = event.target.closest('.folder-node[data-folder-filter]');
+  if (!btn) return;
+  state.folderFilter = btn.dataset.folderFilter || 'all';
+  void runQuery(queryInput.value.trim());
+});
+
+function tokenizeTopic(text) {
+  return String(text || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/g)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 3 && !['about', 'with', 'from', 'that', 'this', 'when'].includes(part));
+}
+
+function extractGoalTopic(goal) {
+  const lower = String(goal || '').toLowerCase();
+  const stopMatch = lower.match(/stopped talking about\s+(.+?)(?:[.?!]|$)/);
+  if (stopMatch && stopMatch[1]) return stopMatch[1].trim();
+  const aboutMatch = lower.match(/about\s+(.+?)(?:[.?!]|$)/);
+  if (aboutMatch && aboutMatch[1]) return aboutMatch[1].trim();
+  return '';
+}
+
+function applyCustomGoalSort(notes) {
+  const goalRaw = String(state.customPrompt || '').trim().toLowerCase();
+  if (!goalRaw) return notes;
+
+  let filtered = [...notes];
+
+  const wantsToday = /\btoday\b/.test(goalRaw) || goalRaw.includes("todays");
+  const wantsLastHour = /\blast\s*hour\b/.test(goalRaw) || goalRaw.includes('past hour');
+  if (wantsToday) {
+    const todayKey = localDayKey(new Date().toISOString());
+    filtered = filtered.filter((note) => localDayKey(note.created_at) === todayKey);
+  }
+
+  if (wantsLastHour) {
+    const cutoffMs = Date.now() - 60 * 60_000;
+    filtered = filtered.filter(
+      (note) => Number.isFinite(new Date(note.created_at).getTime()) && new Date(note.created_at).getTime() >= cutoffMs
+    );
+  }
+
+  let wantsTimeline = false;
+  if (goalRaw.includes('tonight')) wantsTimeline = true;
+  if (goalRaw.includes('stopped talking about')) wantsTimeline = true;
+  if (goalRaw.includes('up until')) wantsTimeline = true;
+
+  if (goalRaw.includes('tonight')) {
+    const now = new Date();
+    const tonightStart = new Date(now);
+    tonightStart.setHours(18, 0, 0, 0);
+    if (now < tonightStart) tonightStart.setHours(0, 0, 0, 0);
+    filtered = filtered.filter((note) => {
+      const created = new Date(note.created_at);
+      return !Number.isNaN(created.getTime()) && created >= tonightStart;
+    });
+  }
+
+  const topic = extractGoalTopic(goalRaw);
+  const keywords = tokenizeTopic(topic);
+  if (keywords.length > 0 && wantsTimeline) {
+    const asc = filtered
+      .slice()
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    let cutoffMs = null;
+    for (const note of asc) {
+      const text = String(note.text || '').toLowerCase();
+      if (keywords.some((keyword) => text.includes(keyword))) {
+        cutoffMs = new Date(note.created_at).getTime();
+      }
+    }
+    if (cutoffMs != null) {
+      filtered = filtered.filter((note) => {
+        const createdMs = new Date(note.created_at).getTime();
+        return Number.isFinite(createdMs) && createdMs <= cutoffMs;
+      });
+    }
+  }
+
+  if (wantsTimeline) {
+    filtered = filtered.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  }
+
+  // Priority: when the user asks for "last hour", sort by time only (ignore folder grouping).
+  if (wantsLastHour) {
+    filtered = filtered.sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+  }
+
+  return filtered;
+}
+
 async function runQuery(text) {
-  state.notes = text ? await window.mvp.queryNotes(text) : await window.mvp.recentNotes();
+  const baseNotes = text
+    ? await window.mvp.queryNotes(text, state.folderFilter)
+    : await window.mvp.recentNotes(state.folderFilter);
+  state.notes = applyCustomGoalSort(baseNotes);
   const validIds = new Set(state.notes.map((n) => n.id));
   state.selectedIds = new Set([...state.selectedIds].filter((id) => validIds.has(id)));
   if (state.listFocusId != null && !state.notes.some((n) => n.id === state.listFocusId)) {
@@ -70,6 +384,7 @@ async function runQuery(text) {
   }
   renderResults();
   updateBulkActionsUi();
+  await refreshFolderDiagram();
 }
 
 function renderResults() {
@@ -77,9 +392,22 @@ function renderResults() {
     resultsEl.innerHTML = '<div class="empty">No notes found.</div>';
     return;
   }
+
+  const goal = String(state.customPrompt || '').trim().toLowerCase();
+  const wantsToday = /\btoday\b/.test(goal) || goal.includes('todays');
+  const wantsLastHour = /\blast\s*hour\b/.test(goal) || goal.includes('past hour');
+  const sameLocalDay = state.notes.every(
+    (n) => localDayKey(n.created_at) === localDayKey(state.notes[0].created_at)
+  );
+  const hideDate = (wantsToday || wantsLastHour) && sameLocalDay;
+
   resultsEl.innerHTML = state.notes
     .map((note) => {
       const preview = note.text.split('\n')[0].slice(0, 120);
+      const dateText = hideDate ? formatTimeOnly(note.created_at) : formatDate(note.created_at);
+      const folderText = folderLabel(note.folder_id);
+      const safeTime = escapeHtml(dateText || 'Unknown');
+      const safeFolder = escapeHtml(folderText);
       const active = note.id === state.activeId ? ' active' : '';
       const listFocus = note.id === state.listFocusId ? ' list-focus' : '';
       const selected = state.selectedIds.has(note.id) ? ' checked' : '';
@@ -89,8 +417,12 @@ function renderResults() {
           <input type="checkbox" class="result-checkbox" data-id="${note.id}"${selected} />
         </label>
         <button type="button" class="result" data-id="${note.id}" tabindex="${tab}">
+          <span class="result-date">
+            <span class="meta-value meta-time-value">${safeTime}</span>
+            <span class="meta-sep">|</span>
+            <span class="meta-value meta-folder-value">${safeFolder}</span>
+          </span>
           <span class="result-text">${escapeHtml(preview)}</span>
-          <span class="result-date">${escapeHtml(formatDate(note.created_at))}</span>
         </button>
         <button type="button" class="result-delete" data-id="${note.id}" title="Delete note">×</button>
       </div>`;
@@ -101,13 +433,17 @@ function renderResults() {
 async function openNote(noteId) {
   const note = await window.mvp.getNote(noteId);
   if (!note) return;
+  const switchedNotes = state.activeId !== note.id;
   state.activeId = note.id;
   state.listFocusId = note.id;
+  if (switchedNotes) resetLinkHistory();
   editorEl.classList.remove('hidden');
   editorDateEl.textContent = formatDate(note.created_at);
   editorTextEl.value = note.text;
+  editorFolderSelect.value = note.folder_id == null ? 'unfiled' : String(note.folder_id);
   renderResults();
   await renderLinks();
+  await renderNoteImages();
 }
 
 async function renderLinks() {
@@ -124,6 +460,26 @@ async function renderLinks() {
     .map(
       (appKey) =>
         `<button type="button" class="chip" data-remove="${escapeHtml(appKey)}">${escapeHtml(labelForAppKey(appKey))} ×</button>`
+    )
+    .join('');
+}
+
+async function renderNoteImages() {
+  if (!state.activeId) {
+    noteImagesEl.innerHTML = '';
+    return;
+  }
+  const images = await window.mvp.listNoteImages(state.activeId);
+  if (!Array.isArray(images) || images.length === 0) {
+    noteImagesEl.innerHTML = '';
+    return;
+  }
+  noteImagesEl.innerHTML = images
+    .map(
+      (image) => `<div class="note-image-card">
+        <img src="${escapeAttr(image.file_url)}" alt="Attachment" />
+        <button type="button" class="note-image-remove" data-image-id="${image.id}" title="Remove image">×</button>
+      </div>`
     )
     .join('');
 }
@@ -190,6 +546,50 @@ async function removeSelectedNotes() {
 queryInput.addEventListener('input', () => {
   runQuery(queryInput.value.trim());
 });
+
+promptInputEl.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    void applyPrompt();
+    return;
+  }
+
+  if (event.key === 'ArrowDown' && state.notes.length > 0) {
+    event.preventDefault();
+    if (state.listFocusId == null) state.listFocusId = state.notes[0].id;
+    else {
+      const i = state.notes.findIndex((n) => n.id === state.listFocusId);
+      if (i >= 0 && i < state.notes.length - 1) state.listFocusId = state.notes[i + 1].id;
+    }
+    renderResults();
+    focusListRow(state.listFocusId);
+    return;
+  }
+
+  if (event.key === 'ArrowUp' && state.notes.length > 0) {
+    event.preventDefault();
+    if (state.listFocusId == null) return;
+    const i = state.notes.findIndex((n) => n.id === state.listFocusId);
+    if (i <= 0) {
+      state.listFocusId = null;
+      renderResults();
+      queryInput.focus();
+    } else {
+      state.listFocusId = state.notes[i - 1].id;
+      renderResults();
+      focusListRow(state.listFocusId);
+    }
+  }
+});
+
+promptConfirmBtn?.addEventListener('click', () => {
+  void applyPrompt();
+});
+
+function applyPrompt() {
+  state.customPrompt = String(promptInputEl.value || '').trim();
+  return runQuery(queryInput.value.trim());
+}
 
 queryInput.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') window.mvp.hideSearch();
@@ -258,6 +658,7 @@ resultsEl.addEventListener(
 
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault();
+      event.stopPropagation();
       const currentId = Number(row.dataset.id);
       const i = state.notes.findIndex((n) => n.id === currentId);
       if (i < 0) return;
@@ -297,16 +698,24 @@ editorTextEl.addEventListener('input', () => {
 });
 
 editorTextEl.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') window.mvp.hideSearch();
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeEditor();
+  }
+});
+
+closeEditorBtn.addEventListener('click', () => {
+  closeEditor();
+});
+
+attachImageBtn.addEventListener('click', async () => {
+  if (!state.activeId) return;
+  await window.mvp.addNoteImagesFromPicker(state.activeId);
+  await renderNoteImages();
 });
 
 copyBtn.addEventListener('click', async () => {
   await window.mvp.copyText(editorTextEl.value);
-});
-
-deleteNoteBtn.addEventListener('click', () => {
-  if (!state.activeId) return;
-  void removeNoteById(state.activeId);
 });
 
 deleteSelectedBtn.addEventListener('click', () => {
@@ -316,9 +725,22 @@ deleteSelectedBtn.addEventListener('click', () => {
 async function submitAppLink() {
   const appKey = await window.mvp.resolveAppKey(appSelect.value);
   if (!appKey || !state.activeId) return;
+  const before = await window.mvp.getLinks(state.activeId);
   await window.mvp.addLink(state.activeId, appKey);
+  const after = await window.mvp.getLinks(state.activeId);
+  pushLinkHistoryEntry(state.activeId, before, after);
   appSelect.value = '';
   await renderLinks();
+  appSelect.focus();
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Failed reading image'));
+    reader.readAsDataURL(file);
+  });
 }
 
 linkBtn.addEventListener('click', () => {
@@ -328,18 +750,268 @@ linkBtn.addEventListener('click', () => {
 appSelect.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter') return;
   event.preventDefault();
+  event.stopPropagation();
   void submitAppLink();
+});
+
+editorFolderSelect.addEventListener('change', async () => {
+  if (!state.activeId) return;
+  const nextFolder = editorFolderSelect.value || 'unfiled';
+  const updated = await window.mvp.setNoteFolder(state.activeId, nextFolder);
+  if (!updated) return;
+  await runQuery(queryInput.value.trim());
+});
+
+editorTextEl.addEventListener('paste', async (event) => {
+  if (!state.activeId) return;
+  const items = [...(event.clipboardData?.items || [])];
+  const imageItems = items.filter((item) => item.kind === 'file' && String(item.type || '').startsWith('image/'));
+  if (imageItems.length === 0) return;
+  event.preventDefault();
+  for (const item of imageItems) {
+    const file = item.getAsFile();
+    if (!file) continue;
+    const dataUrl = await fileToDataUrl(file);
+    await window.mvp.addNoteImageFromDataUrl(state.activeId, dataUrl);
+  }
+  await renderNoteImages();
 });
 
 linksEl.addEventListener('click', async (event) => {
   const chip = event.target.closest('.chip');
   if (!chip || !state.activeId) return;
   const appKey = chip.dataset.remove;
+  const before = await window.mvp.getLinks(state.activeId);
   await window.mvp.removeLink(state.activeId, appKey);
+  const after = await window.mvp.getLinks(state.activeId);
+  pushLinkHistoryEntry(state.activeId, before, after);
   await renderLinks();
 });
 
+noteImagesEl.addEventListener('click', async (event) => {
+  const btn = event.target.closest('.note-image-remove');
+  if (!btn || !state.activeId) return;
+  const imageId = Number(btn.dataset.imageId);
+  if (!Number.isFinite(imageId)) return;
+  await window.mvp.removeNoteImage(state.activeId, imageId);
+  await renderNoteImages();
+});
+
+function appendOrganizeBubble(role, text, isError) {
+  const div = document.createElement('div');
+  div.className = `organize-msg ${role}${isError ? ' error' : ''}`;
+  div.textContent = text;
+  organizeMessagesEl.appendChild(div);
+  organizeMessagesEl.scrollTop = organizeMessagesEl.scrollHeight;
+}
+
+function setOrganizeApplyVisible(show) {
+  organizeApplyBtn.classList.toggle('hidden', !show);
+}
+
+function setOrganizePlanRowVisible(show, initialText) {
+  organizePlanRowEl.classList.toggle('hidden', !show);
+  organizeComposeEl?.classList.toggle('hidden', show);
+  if (show && initialText != null) organizePlanEditEl.value = initialText;
+  if (!show) organizePlanEditEl.value = '';
+}
+
+function trimLastOrganizeExchangeFromDom() {
+  if (organizeHistory.length < 2) return;
+  organizeHistory.splice(-2, 2);
+  const ch = organizeMessagesEl.children;
+  if (ch.length >= 2) {
+    organizeMessagesEl.removeChild(ch[ch.length - 1]);
+    organizeMessagesEl.removeChild(ch[ch.length - 2]);
+  }
+}
+
+async function sendOrganizeMessage() {
+  const text = organizeInputEl.value.trim();
+  if (!text) return;
+  organizeInputEl.value = '';
+  appendOrganizeBubble('user', text, false);
+  organizeSendBtn.disabled = true;
+  organizePendingPlan = null;
+  organizePlanUserText = null;
+  setOrganizeApplyVisible(false);
+  setOrganizePlanRowVisible(false);
+  try {
+    const res = await window.mvp.organizeChat({
+      userMessage: text,
+      history: organizeHistory,
+    });
+    if (res.error) {
+      let detail = res.error;
+      if (res.raw) detail += `\n\n---\n${String(res.raw).slice(0, 2000)}`;
+      appendOrganizeBubble('assistant', detail, true);
+    } else {
+      const hasPlan = Array.isArray(res.plan) && res.plan.length > 0;
+      if (!hasPlan) appendOrganizeBubble('assistant', res.reply, false);
+      organizeHistory.push({ role: 'user', content: text });
+      organizeHistory.push({ role: 'assistant', content: res.reply });
+      if (organizeHistory.length > 16) organizeHistory.splice(0, organizeHistory.length - 16);
+      if (hasPlan) {
+        organizePendingPlan = res.plan;
+        organizePlanUserText = text;
+        setOrganizeApplyVisible(true);
+        setOrganizePlanRowVisible(true, text);
+      }
+    }
+  } catch (e) {
+    appendOrganizeBubble('assistant', e.message || String(e), true);
+  } finally {
+    organizeSendBtn.disabled = false;
+  }
+}
+
+async function updateOrganizePlanFromEdit() {
+  const text = organizePlanEditEl.value.trim();
+  if (!text) return;
+  organizeSendBtn.disabled = true;
+  organizeUpdatePlanBtn.disabled = true;
+  organizePendingPlan = null;
+  organizePlanUserText = null;
+  setOrganizeApplyVisible(false);
+  trimLastOrganizeExchangeFromDom();
+  try {
+    const res = await window.mvp.organizeChat({
+      userMessage: text,
+      history: organizeHistory,
+    });
+    if (res.error) {
+      let detail = res.error;
+      if (res.raw) detail += `\n\n---\n${String(res.raw).slice(0, 2000)}`;
+      appendOrganizeBubble('user', text, false);
+      appendOrganizeBubble('assistant', detail, true);
+      organizeHistory.push({ role: 'user', content: text });
+      organizeHistory.push({ role: 'assistant', content: detail });
+      if (organizeHistory.length > 16) organizeHistory.splice(0, organizeHistory.length - 16);
+      setOrganizePlanRowVisible(false);
+    } else {
+      const hasPlan = Array.isArray(res.plan) && res.plan.length > 0;
+      appendOrganizeBubble('user', text, false);
+      if (!hasPlan) appendOrganizeBubble('assistant', res.reply, false);
+      organizeHistory.push({ role: 'user', content: text });
+      organizeHistory.push({ role: 'assistant', content: res.reply });
+      if (organizeHistory.length > 16) organizeHistory.splice(0, organizeHistory.length - 16);
+      if (hasPlan) {
+        organizePendingPlan = res.plan;
+        organizePlanUserText = text;
+        setOrganizeApplyVisible(true);
+        setOrganizePlanRowVisible(true, text);
+      } else {
+        setOrganizePlanRowVisible(false);
+      }
+    }
+  } catch (e) {
+    appendOrganizeBubble('assistant', e.message || String(e), true);
+    setOrganizePlanRowVisible(false);
+  } finally {
+    organizeSendBtn.disabled = false;
+    organizeUpdatePlanBtn.disabled = false;
+  }
+}
+
+organizeSendBtn.addEventListener('click', () => {
+  void sendOrganizeMessage();
+});
+
+organizeInputEl.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' || event.shiftKey) return;
+  event.preventDefault();
+  void sendOrganizeMessage();
+});
+
+organizeUpdatePlanBtn.addEventListener('click', () => {
+  void updateOrganizePlanFromEdit();
+});
+
+organizeApplyBtn.addEventListener('click', async () => {
+  if (!organizePendingPlan || organizePendingPlan.length === 0) return;
+  organizeApplyBtn.disabled = true;
+  try {
+    const edited = organizePlanEditEl.value.trim();
+    if (
+      edited &&
+      organizePlanUserText != null &&
+      edited !== organizePlanUserText
+    ) {
+      await updateOrganizePlanFromEdit();
+    }
+    if (!organizePendingPlan || organizePendingPlan.length === 0) return;
+    const result = await window.mvp.applyOrganizePlan(organizePendingPlan);
+    organizePendingPlan = null;
+    organizePlanUserText = null;
+    setOrganizeApplyVisible(false);
+    setOrganizePlanRowVisible(false);
+    const summary = [
+      result.applied.length ? `Done (${result.applied.length} steps).` : 'No steps applied.',
+      result.errors.length ? `Issues: ${result.errors.join('; ')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+    appendOrganizeBubble('assistant', summary, result.errors.length > 0);
+    await loadFolders();
+    await runQuery(queryInput.value.trim());
+    if (state.activeId != null) {
+      const note = await window.mvp.getNote(state.activeId);
+      if (note) {
+        editorFolderSelect.value = note.folder_id == null ? 'unfiled' : String(note.folder_id);
+      }
+    }
+  } catch (e) {
+    appendOrganizeBubble('assistant', e.message || String(e), true);
+  } finally {
+    organizeApplyBtn.disabled = false;
+  }
+});
+
 document.addEventListener('keydown', (event) => {
+  if (!isTypingTarget(event.target) && isUndoShortcut(event)) {
+    event.preventDefault();
+    void undoLinkChange();
+    return;
+  }
+
+  if (!isTypingTarget(event.target) && isRedoShortcut(event)) {
+    event.preventDefault();
+    void redoLinkChange();
+    return;
+  }
+
+  // Arrow key navigation through note list (prevent default scrolling).
+  if (!isTypingTarget(event.target) && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    // Let the dedicated `#results` keyboard handler run when we're already interacting with a row.
+    if (event.target?.closest?.('#results')) return;
+    if (state.notes.length > 0) {
+      event.preventDefault();
+      if (event.key === 'ArrowDown') {
+        if (state.listFocusId == null) state.listFocusId = state.notes[0].id;
+        else {
+          const i = state.notes.findIndex((n) => n.id === state.listFocusId);
+          if (i >= 0 && i < state.notes.length - 1) state.listFocusId = state.notes[i + 1].id;
+        }
+        renderResults();
+        focusListRow(state.listFocusId);
+      } else if (event.key === 'ArrowUp') {
+        if (state.listFocusId == null) return;
+        const i = state.notes.findIndex((n) => n.id === state.listFocusId);
+        if (i <= 0) {
+          state.listFocusId = null;
+          renderResults();
+          queryInput.focus();
+        } else {
+          state.listFocusId = state.notes[i - 1].id;
+          renderResults();
+          focusListRow(state.listFocusId);
+        }
+      }
+      return;
+    }
+  }
+
   if (event.metaKey && !event.shiftKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'n') {
     event.preventDefault();
     window.mvp.openCapture();
@@ -383,12 +1055,17 @@ window.mvp.onSearchFocus(async (payload) => {
 });
 
 window.mvp.onNotesChanged(() => {
+  void loadFolders();
   void runQuery(queryInput.value.trim());
-  if (state.activeId != null) void renderLinks();
+  if (state.activeId != null) {
+    void renderLinks();
+    void renderNoteImages();
+  }
 });
 
 async function init() {
   await loadApps();
+  await loadFolders();
   await runQuery('');
 }
 

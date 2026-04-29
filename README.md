@@ -8,7 +8,11 @@ Proactive Recall is a local-first macOS desktop notes app built with Electron. I
 - Proactive note surfacing based on current/frontmost app
 - Overlay UI for surfaced notes
 - Capture flow for quickly saving notes
-- AI-assisted note tooling (configured via environment/API key)
+- Interactive folder dashboard (click folders in the diagram to filter the notes list)
+- Prompt-based “view organization” (changes how the notes list is displayed; folder diagram remains in sync)
+- Prompt filters/sorts for phrases like “today” and “last hour” (UI hides the date when all results are from the same day)
+- Keyboard navigation in the notes list (arrow keys move selection; Enter opens a note)
+- AI-assisted folder organization tools (configured via environment/API key)
 - macOS packaging, signing, and notarization support
 
 ## Tech Stack
