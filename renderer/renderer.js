@@ -10,6 +10,8 @@ const state = {
   folders: [],
   folderFilter: 'all',
   customPrompt: '',
+  /** True when the search box is empty and we are rendering the default recent list. */
+  isDefaultList: true,
 };
 
 const queryInput = document.getElementById('query');
@@ -303,39 +305,16 @@ function extractGoalTopic(goal) {
 
 function applyCustomGoalSort(notes) {
   const goalRaw = String(state.customPrompt || '').trim().toLowerCase();
-  if (!goalRaw) return notes;
-
   let filtered = [...notes];
 
-  const wantsToday = /\btoday\b/.test(goalRaw) || goalRaw.includes("todays");
-  const wantsLastHour = /\blast\s*hour\b/.test(goalRaw) || goalRaw.includes('past hour');
-  if (wantsToday) {
+  // Default dashboard view: always show today's notes only (time filtering removed from the prompt).
+  if (state.isDefaultList) {
     const todayKey = localDayKey(new Date().toISOString());
     filtered = filtered.filter((note) => localDayKey(note.created_at) === todayKey);
   }
 
-  if (wantsLastHour) {
-    const cutoffMs = Date.now() - 60 * 60_000;
-    filtered = filtered.filter(
-      (note) => Number.isFinite(new Date(note.created_at).getTime()) && new Date(note.created_at).getTime() >= cutoffMs
-    );
-  }
-
-  let wantsTimeline = false;
-  if (goalRaw.includes('tonight')) wantsTimeline = true;
-  if (goalRaw.includes('stopped talking about')) wantsTimeline = true;
-  if (goalRaw.includes('up until')) wantsTimeline = true;
-
-  if (goalRaw.includes('tonight')) {
-    const now = new Date();
-    const tonightStart = new Date(now);
-    tonightStart.setHours(18, 0, 0, 0);
-    if (now < tonightStart) tonightStart.setHours(0, 0, 0, 0);
-    filtered = filtered.filter((note) => {
-      const created = new Date(note.created_at);
-      return !Number.isNaN(created.getTime()) && created >= tonightStart;
-    });
-  }
+  // Timeline slicing is intentionally limited (time filtering like "last hour"/"tonight" is removed).
+  const wantsTimeline = goalRaw.includes('stopped talking about');
 
   const topic = extractGoalTopic(goalRaw);
   const keywords = tokenizeTopic(topic);
@@ -362,17 +341,11 @@ function applyCustomGoalSort(notes) {
     filtered = filtered.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   }
 
-  // Priority: when the user asks for "last hour", sort by time only (ignore folder grouping).
-  if (wantsLastHour) {
-    filtered = filtered.sort(
-      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-  }
-
   return filtered;
 }
 
 async function runQuery(text) {
+  state.isDefaultList = !text;
   const baseNotes = text
     ? await window.mvp.queryNotes(text, state.folderFilter)
     : await window.mvp.recentNotes(state.folderFilter);
@@ -392,14 +365,11 @@ function renderResults() {
     resultsEl.innerHTML = '<div class="empty">No notes found.</div>';
     return;
   }
-
-  const goal = String(state.customPrompt || '').trim().toLowerCase();
-  const wantsToday = /\btoday\b/.test(goal) || goal.includes('todays');
-  const wantsLastHour = /\blast\s*hour\b/.test(goal) || goal.includes('past hour');
   const sameLocalDay = state.notes.every(
     (n) => localDayKey(n.created_at) === localDayKey(state.notes[0].created_at)
   );
-  const hideDate = (wantsToday || wantsLastHour) && sameLocalDay;
+  // In default dashboard view, notes are scoped to today; show time-only (hide date).
+  const hideDate = state.isDefaultList && sameLocalDay;
 
   resultsEl.innerHTML = state.notes
     .map((note) => {

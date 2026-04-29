@@ -269,9 +269,8 @@ function listRecent(limit = 200, folderId = 'all') {
       LEFT JOIN folders f ON f.id = n.folder_id
       WHERE ${whereFolder}
       ORDER BY
-        CASE WHEN n.folder_id IS NULL THEN 1 ELSE 0 END ASC,
-        lower(COALESCE(f.name, '')) ASC,
-        datetime(n.created_at) DESC
+        datetime(n.created_at) DESC,
+        n.id DESC
       LIMIT ?
     `)
     .all(...params);
