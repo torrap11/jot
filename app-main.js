@@ -41,6 +41,19 @@ const MIME_TO_EXT = {
   'image/gif': '.gif',
 };
 
+const IMAGE_EXT_TO_MIME = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+};
+
+function mimeForImagePath(imagePath) {
+  const ext = path.extname(String(imagePath || '')).toLowerCase();
+  return IMAGE_EXT_TO_MIME[ext] || 'image/png';
+}
+
 // Only allow copying a small set of “safe text-ish” file types into note storage.
 // This avoids arbitrary binary attachments.
 const NOTE_FILE_WHITELIST_EXTS = ['pdf', 'md', 'rmd', 'txt'];
@@ -65,6 +78,21 @@ function toImagePayload(row) {
     image_path: row.image_path,
     file_url: pathToFileURL(row.image_path).href,
   };
+}
+
+async function toImagePayloadWithData(row) {
+  const payload = toImagePayload(row);
+  try {
+    const buf = await fs.readFile(row.image_path);
+    if (!buf || buf.length === 0) {
+      payload.data_url = null;
+      return payload;
+    }
+    payload.data_url = `data:${mimeForImagePath(row.image_path)};base64,${buf.toString('base64')}`;
+  } catch (_error) {
+    payload.data_url = null;
+  }
+  return payload;
 }
 
 function parseImageDataUrl(dataUrl) {
@@ -360,6 +388,38 @@ async function importExistingDbFromMenu() {
   }
 }
 
+async function exportDbFromMenu() {
+  const parentWindow = searchWin || captureWin || null;
+  const stamp = new Date().toISOString().slice(0, 10);
+  const result = await dialog.showSaveDialog(parentWindow, {
+    title: 'Export database',
+    defaultPath: `jot-backup-${stamp}.db`,
+    filters: [
+      { name: 'SQLite database', extensions: ['db'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  if (result.canceled || !result.filePath) return;
+
+  try {
+    await db.exportDbToFile(result.filePath);
+    await dialog.showMessageBox(parentWindow, {
+      type: 'info',
+      title: 'Database exported',
+      message: 'Your database was saved.',
+      detail:
+        'Use Import DB to load this file later on this Mac or another. Image and file attachments are stored separately in app data; moving to a new computer may require copying those folders too if you need attachments.',
+    });
+  } catch (error) {
+    await dialog.showMessageBox(parentWindow, {
+      type: 'error',
+      title: 'Export failed',
+      message: 'Could not export the database.',
+      detail: error && error.message ? error.message : String(error),
+    });
+  }
+}
+
 async function maybeShowFirstLaunchChoice() {
   if (!db.consumeWasPackagedFirstLaunch()) return false;
   const parentWindow = searchWin || captureWin || null;
@@ -408,6 +468,12 @@ function buildAppMenu() {
           label: 'Import Existing DB...',
           click: () => {
             void importExistingDbFromMenu();
+          },
+        },
+        {
+          label: 'Export Database…',
+          click: () => {
+            void exportDbFromMenu();
           },
         },
         {
@@ -556,6 +622,10 @@ function registerIpc() {
     await importExistingDbFromMenu();
     return true;
   });
+  ipcMain.handle('db:export-from-picker', async () => {
+    await exportDbFromMenu();
+    return true;
+  });
   ipcMain.handle('folders:list', () => db.listFolders());
   ipcMain.handle('folders:diagram', () => db.getFolderDiagram());
   ipcMain.handle('folders:create', (_event, name) => {
@@ -569,7 +639,10 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle('clipboard:read', () => clipboard.readText());
-  ipcMain.handle('note-images:list', (_event, noteId) => db.listNoteImages(noteId).map(toImagePayload));
+  ipcMain.handle('note-images:list', async (_event, noteId) => {
+    const rows = db.listNoteImages(noteId);
+    return Promise.all(rows.map((row) => toImagePayloadWithData(row)));
+  });
   ipcMain.handle('note-images:add-from-data-url', async (_event, noteId, dataUrl) => {
     const note = db.getNote(noteId);
     if (!note) return null;
@@ -714,6 +787,18 @@ app.whenReady().then(async () => {
   console.log('[app] app.getPath(userData):', app.getPath('userData'));
   db.listFolders(); // triggers getDb() → logs path, runs migration if needed
   console.log('[app] DB path:', db.getDbPath());
+
+  if (process.env.JOT_SEED_SCREENSHOT === '1') {
+    try {
+      const summary = db.seedScreenshotDemoState();
+      console.log('[seed] screenshot demo data written:', summary);
+    } catch (err) {
+      console.error('[seed] failed:', err);
+      process.exitCode = 1;
+    }
+    app.quit();
+    return;
+  }
 
   createCaptureWindow();
   createSearchWindow();

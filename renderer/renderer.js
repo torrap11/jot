@@ -16,6 +16,7 @@ const state = {
 
 const queryInput = document.getElementById('query');
 const importDbBtn = document.getElementById('import-db-btn');
+const exportDbBtn = document.getElementById('export-db-btn');
 const aiKeyAccessStatusEl = document.getElementById('ai-key-access-status');
 const aiKeyAccessBtn = document.getElementById('ai-key-access-btn');
 const promptInputEl = document.getElementById('prompt-input');
@@ -38,6 +39,11 @@ const linkBtn = document.getElementById('link-btn');
 const linksEl = document.getElementById('links');
 const noteImagesEl = document.getElementById('note-images');
 const noteFilesEl = document.getElementById('note-files');
+const imageLightboxEl = document.getElementById('image-lightbox');
+const imageLightboxImg = document.getElementById('image-lightbox-img');
+const imageLightboxCloseBtn = document.querySelector('.image-lightbox-close');
+
+let imageLightboxKeydownHandler = null;
 const organizePanelEl = document.getElementById('organize-panel');
 const organizeMessagesEl = document.getElementById('organize-messages');
 const setApiKeyBtn = document.getElementById('set-api-key-btn');
@@ -127,8 +133,31 @@ function isRedoShortcut(event) {
   return modifier && !event.altKey && event.shiftKey && event.key.toLowerCase() === 'z';
 }
 
+function closeImageLightbox() {
+  if (!imageLightboxEl || !imageLightboxImg) return;
+  imageLightboxEl.classList.add('hidden');
+  imageLightboxImg.removeAttribute('src');
+  imageLightboxImg.alt = '';
+  if (imageLightboxKeydownHandler) {
+    document.removeEventListener('keydown', imageLightboxKeydownHandler);
+    imageLightboxKeydownHandler = null;
+  }
+}
+
+function openImageLightbox(src, alt) {
+  if (!imageLightboxEl || !imageLightboxImg || !src) return;
+  imageLightboxImg.src = src;
+  imageLightboxImg.alt = alt || 'Attachment';
+  imageLightboxEl.classList.remove('hidden');
+  imageLightboxKeydownHandler = (e) => {
+    if (e.key === 'Escape') closeImageLightbox();
+  };
+  document.addEventListener('keydown', imageLightboxKeydownHandler);
+}
+
 function closeEditor() {
   clearTimeout(saveTimer);
+  closeImageLightbox();
   state.activeId = null;
   resetLinkHistory();
   editorEl.classList.add('hidden');
@@ -450,12 +479,13 @@ async function renderNoteImages() {
     return;
   }
   noteImagesEl.innerHTML = images
-    .map(
-      (image) => `<div class="note-image-card">
-        <img src="${escapeAttr(image.file_url)}" alt="Attachment" />
+    .map((image) => {
+      const src = image.data_url || image.file_url || '';
+      return `<div class="note-image-card" role="button" tabindex="0" aria-label="View attachment full size">
+        <img src="${escapeAttr(src)}" alt="Attachment" />
         <button type="button" class="note-image-remove" data-image-id="${image.id}" title="Remove image">×</button>
-      </div>`
-    )
+      </div>`;
+    })
     .join('');
 }
 
@@ -549,6 +579,10 @@ queryInput.addEventListener('input', () => {
 
 importDbBtn?.addEventListener('click', async () => {
   await window.mvp.importDbFromPicker();
+});
+
+exportDbBtn?.addEventListener('click', async () => {
+  await window.mvp.exportDbFromPicker();
 });
 
 promptInputEl.addEventListener('keydown', (event) => {
@@ -841,13 +875,41 @@ linksEl.addEventListener('click', async (event) => {
 });
 
 noteImagesEl.addEventListener('click', async (event) => {
-  const btn = event.target.closest('.note-image-remove');
-  if (!btn || !state.activeId) return;
-  const imageId = Number(btn.dataset.imageId);
-  if (!Number.isFinite(imageId)) return;
-  await window.mvp.removeNoteImage(state.activeId, imageId);
-  await renderNoteImages();
+  const removeBtn = event.target.closest('.note-image-remove');
+  if (removeBtn) {
+    if (!state.activeId) return;
+    const imageId = Number(removeBtn.dataset.imageId);
+    if (!Number.isFinite(imageId)) return;
+    await window.mvp.removeNoteImage(state.activeId, imageId);
+    await renderNoteImages();
+    return;
+  }
+
+  const card = event.target.closest('.note-image-card');
+  if (!card) return;
+  const img = card.querySelector('img');
+  if (!img || !img.getAttribute('src')) return;
+  openImageLightbox(img.currentSrc || img.src, img.alt || 'Attachment');
 });
+
+noteImagesEl.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const card = event.target.closest('.note-image-card');
+  if (!card || event.target.closest('.note-image-remove')) return;
+  event.preventDefault();
+  const img = card.querySelector('img');
+  if (!img || !img.getAttribute('src')) return;
+  openImageLightbox(img.currentSrc || img.src, img.alt || 'Attachment');
+});
+
+if (imageLightboxEl && imageLightboxImg) {
+  imageLightboxEl.addEventListener('click', (event) => {
+    if (event.target === imageLightboxImg) return;
+    closeImageLightbox();
+  });
+}
+
+imageLightboxCloseBtn?.addEventListener('click', () => closeImageLightbox());
 
 noteFilesEl.addEventListener('click', async (event) => {
   if (!state.activeId) return;

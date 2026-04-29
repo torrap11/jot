@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: file:" />
   <title>Jot</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -11,6 +11,7 @@
   <main class="search-shell">
     <div class="search-toolbar">
       <button id="import-db-btn" type="button">Import DB</button>
+      <button id="export-db-btn" type="button">Export DB</button>
       <input id="query" type="search" placeholder="Search notes..." autofocus />
     </div>
     <div class="ai-key-access-row" aria-label="Anthropic API key">
@@ -75,6 +76,10 @@
       <div id="links"></div>
     </section>
   </main>
+  <div id="image-lightbox" class="image-lightbox hidden" role="dialog" aria-modal="true" aria-label="Image preview">
+    <button type="button" class="image-lightbox-close" aria-label="Close">×</button>
+    <img id="image-lightbox-img" class="image-lightbox-img" alt="" />
+  </div>
   <div id="api-key-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="api-key-modal-title">
     <div class="modal-dialog">
       <h2 id="api-key-modal-title" class="modal-title">Anthropic API key</h2>

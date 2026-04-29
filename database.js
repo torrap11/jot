@@ -169,6 +169,36 @@ function importDbFromFile(sourcePath) {
 }
 
 /**
+ * Writes a consistent snapshot of the open DB (safe with WAL) for backup / import elsewhere.
+ * @param {string} destPath
+ * @returns {Promise<string|null>} Absolute path written, or null if destPath empty.
+ */
+async function exportDbToFile(destPath) {
+  const dest = String(destPath || '').trim();
+  if (!dest) return null;
+
+  const dir = path.dirname(dest);
+  fs.mkdirSync(dir, { recursive: true });
+
+  const tempPath = `${dest}.exporting-${process.pid}`;
+  if (fs.existsSync(tempPath)) fs.rmSync(tempPath, { force: true });
+
+  try {
+    await getDb().backup(tempPath);
+    if (fs.existsSync(dest)) fs.rmSync(dest);
+    fs.renameSync(tempPath, dest);
+  } catch (err) {
+    try {
+      fs.rmSync(tempPath, { force: true });
+    } catch (_e) {
+      // ignore
+    }
+    throw err;
+  }
+  return dest;
+}
+
+/**
  * Import non-duplicate notes (by text + created_at) from a secondary legacy DB into the
  * already-open main DB. Uses SQLite ATTACH so no external tools are needed.
  * Empty-text notes (schema migration artifacts) are skipped.
@@ -938,11 +968,118 @@ function consumeWasPackagedFirstLaunch() {
   return value;
 }
 
+const SCREENSHOT_SEED_FOLDERS = [
+  'App Ideas & Tech',
+  'Entertainment',
+  'Personal',
+  'Philosophy & Life',
+  'Tasks & Reminders',
+];
+
+/** Demo dataset matching the Apr 29, 2026 Jot Search screenshot (folder counts + note list). */
+const SCREENSHOT_SEED_NOTES = [
+  { text: 'group pic', at: '2026-04-29 12:03:00', folder: 'Personal' },
+  {
+    text: "it's a chicken or the egg scenario because you are who u surround yourself with",
+    at: '2026-04-29 08:53:00',
+    folder: 'Philosophy & Life',
+  },
+  {
+    text: 'workflow to cmd+b an app and download it if it doesnt exist',
+    at: '2026-04-29 08:40:00',
+    folder: 'App Ideas & Tech',
+  },
+  {
+    text: 'consuming is appreciate geniuses at their art',
+    at: '2026-04-29 06:29:00',
+    folder: 'Philosophy & Life',
+  },
+  {
+    text: 'learn through words / simplicity cuz it is more optimal. reduce noise.',
+    at: '2026-04-29 05:44:00',
+    folder: 'Philosophy & Life',
+  },
+  {
+    text: 'life is about the past, present, future. the now and memory and anticipation.',
+    at: '2026-04-29 05:40:00',
+    folder: 'Philosophy & Life',
+  },
+  {
+    text: 'rick and morty episode whatever we watched tonight about nothing matters',
+    at: '2026-04-29 05:31:00',
+    folder: 'Entertainment',
+  },
+  {
+    text: 'build chatbot that has knowledge of the UI and features of an app',
+    at: '2026-04-29 03:48:00',
+    folder: 'App Ideas & Tech',
+  },
+  {
+    text: 'tray icon with last 5 jots and one-click capture',
+    at: '2026-04-29 02:30:00',
+    folder: 'App Ideas & Tech',
+  },
+  {
+    text: 'sync folder diagram colors to calendar blocks for timeboxing',
+    at: '2026-04-29 02:00:00',
+    folder: 'App Ideas & Tech',
+  },
+];
+
+/**
+ * Clears user tables and inserts the screenshot demo dataset. Call via
+ * `JOT_SEED_SCREENSHOT=1 electron .` (quit other instances first).
+ * @returns {{ notes: number, folders: number, dbPath: string }}
+ */
+function seedScreenshotDemoState() {
+  const database = getDb();
+  const dbPath = _resolvedDbPath || '';
+
+  database.exec(`
+    DELETE FROM note_surface_state;
+    DELETE FROM note_app_links;
+    DELETE FROM note_images;
+    DELETE FROM note_files;
+    DELETE FROM folder_app_links;
+    DELETE FROM notes;
+    DELETE FROM folders;
+  `);
+
+  const insertFolder = database.prepare(
+    "INSERT INTO folders (name, created_at) VALUES (?, '2026-04-29 00:00:00')"
+  );
+  /** @type {Record<string, number>} */
+  const folderIdByName = {};
+  for (const name of SCREENSHOT_SEED_FOLDERS) {
+    const r = insertFolder.run(name);
+    folderIdByName[name] = Number(r.lastInsertRowid);
+  }
+
+  const insertNote = database.prepare(`
+    INSERT INTO notes (text, created_at, updated_at, folder_id)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  for (const row of SCREENSHOT_SEED_NOTES) {
+    const fid = folderIdByName[row.folder];
+    if (fid == null) throw new Error(`seed: unknown folder ${row.folder}`);
+    insertNote.run(row.text, row.at, row.at, fid);
+  }
+
+  return {
+    notes: SCREENSHOT_SEED_NOTES.length,
+    folders: SCREENSHOT_SEED_FOLDERS.length,
+    dbPath,
+  };
+}
+
 module.exports = {
   getDbPath,
   consumeWasPackagedFirstLaunch,
   closeDb,
   importDbFromFile,
+  exportDbToFile,
+  seedScreenshotDemoState,
   createNote,
   updateNote,
   deleteNote,

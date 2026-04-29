@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('mvp', {
   createFolder: (name) => ipcRenderer.invoke('folders:create', name),
   listApps: () => ipcRenderer.invoke('apps:list'),
   importDbFromPicker: () => ipcRenderer.invoke('db:import-from-picker'),
+  exportDbFromPicker: () => ipcRenderer.invoke('db:export-from-picker'),
   resolveAppKey: (raw) => ipcRenderer.invoke('apps:resolve', raw),
   copyText: (text) => ipcRenderer.invoke('clipboard:copy', text),
   readClipboardText: () => ipcRenderer.invoke('clipboard:read'),
