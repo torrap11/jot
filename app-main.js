@@ -6,7 +6,7 @@
  * frontmost-app polling → surfaceEngine → overlay.
  */
 
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, clipboard, dialog, shell } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, clipboard, dialog, shell, Menu } = require('electron');
 const fs = require('fs/promises');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -24,6 +24,7 @@ let searchWin = null;
 let overlayWin = null;
 let lastSurfaceAt = 0;
 let lastSurfaceAppKey = '';
+let isImportingDb = false;
 
 const APP_CONFIG = {
   maxSurfacedNotes: 3,
@@ -310,6 +311,101 @@ function registerShortcuts() {
   globalShortcut.register('CommandOrControl+P', () => showSearchWindow());
 }
 
+async function importExistingDbFromMenu() {
+  if (isImportingDb) return;
+  const parentWindow = searchWin || captureWin || null;
+  const result = await dialog.showOpenDialog(parentWindow, {
+    properties: ['openFile'],
+    filters: [
+      { name: 'SQLite DB files', extensions: ['db', 'sqlite', 'sqlite3'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) return;
+
+  try {
+    isImportingDb = true;
+    watcher.stopWatcher();
+    const importedPath = db.importDbFromFile(result.filePaths[0]);
+    if (!importedPath) throw new Error('Could not import selected database file.');
+    if (app.isPackaged) {
+      await dialog.showMessageBox(parentWindow, {
+        type: 'info',
+        title: 'Database Imported',
+        message: 'Database imported successfully.',
+        detail: 'Jot will restart to load the imported database.',
+      });
+      app.relaunch();
+      app.exit(0);
+    } else {
+      await dialog.showMessageBox(parentWindow, {
+        type: 'info',
+        title: 'Database Imported',
+        message: 'Database imported successfully.',
+        detail: 'Data has been reloaded from the selected database.',
+      });
+      db.listFolders(); // re-open DB immediately after import in dev mode
+      notifySearchNotesChanged();
+    }
+  } catch (error) {
+    await dialog.showMessageBox(parentWindow, {
+      type: 'error',
+      title: 'Import Failed',
+      message: 'Could not import database.',
+      detail: error && error.message ? error.message : String(error),
+    });
+  } finally {
+    isImportingDb = false;
+    startWatcher();
+  }
+}
+
+async function maybeShowFirstLaunchChoice() {
+  if (!db.consumeWasPackagedFirstLaunch()) return;
+  const parentWindow = searchWin || captureWin || null;
+  const result = await dialog.showMessageBox(parentWindow, {
+    type: 'question',
+    title: 'Welcome to Jot',
+    message: 'How do you want to start?',
+    detail: 'Start with a blank database, or import an existing database file now.',
+    buttons: ['Start Fresh', 'Import Existing DB...'],
+    defaultId: 0,
+    cancelId: 0,
+  });
+  if (result.response === 1) {
+    await importExistingDbFromMenu();
+  }
+}
+
+function buildAppMenu() {
+  const template = [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Import Existing DB...',
+          click: () => {
+            void importExistingDbFromMenu();
+          },
+        },
+        { type: 'separator' },
+        { role: process.platform === 'darwin' ? 'close' : 'quit' },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'togglefullscreen' }],
+    },
+  ];
+  if (process.platform === 'darwin') {
+    template.unshift({
+      label: app.getName(),
+      submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideothers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }],
+    });
+  }
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function startWatcher() {
   watcher.startWatcher({
     getConfig: () => ({ surfacingEnabled: true }),
@@ -382,6 +478,10 @@ function registerIpc() {
     return db.getLinksForNote(noteId);
   });
   ipcMain.handle('apps:list', () => KNOWN_APPS.map((entry) => ({ name: entry.name, bundleId: entry.bundleId })));
+  ipcMain.handle('db:import-from-picker', async () => {
+    await importExistingDbFromMenu();
+    return true;
+  });
   ipcMain.handle('folders:list', () => db.listFolders());
   ipcMain.handle('folders:diagram', () => db.getFolderDiagram());
   ipcMain.handle('folders:create', (_event, name) => {
@@ -529,8 +629,8 @@ function registerIpc() {
   ipcMain.on('overlay-dismiss-all', hideOverlay);
 }
 
-app.whenReady().then(() => {
-  // Eagerly open the DB so the resolved path is logged at startup (before any IPC call).
+app.whenReady().then(async () => {
+  // Eagerly open the DB so first launch always creates an initial blank DB file.
   console.log('[app] app.getName():', app.getName());
   console.log('[app] app.getPath(userData):', app.getPath('userData'));
   db.listFolders(); // triggers getDb() → logs path, runs migration if needed
@@ -539,9 +639,11 @@ app.whenReady().then(() => {
   aiOrganize.loadDotenv(app.getPath('userData'));
   createCaptureWindow();
   createSearchWindow();
+  buildAppMenu();
   registerShortcuts();
   registerIpc();
   startWatcher();
+  await maybeShowFirstLaunchChoice();
 });
 
 app.on('will-quit', () => {

@@ -83,6 +83,7 @@ body {
 
 #query {
   width: 100%;
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px;
@@ -90,6 +91,20 @@ body {
   background: #0f131a;
   color: var(--text);
   outline: none;
+}
+
+.search-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#import-db-btn {
+  white-space: nowrap;
+  min-width: 92px;
+  height: 100%;
+  padding: 0 12px;
+  border-radius: 10px;
 }
 
 .prompt-toolbar {
@@ -375,6 +390,7 @@ button.folder-node:hover {
 #organize-toggle,
 #prompt-apply-btn,
 #prompt-confirm-btn,
+#import-db-btn,
 #organize-send,
 #organize-apply,
 #link-btn,

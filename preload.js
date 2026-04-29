@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('mvp', {
   getFolderDiagram: () => ipcRenderer.invoke('folders:diagram'),
   createFolder: (name) => ipcRenderer.invoke('folders:create', name),
   listApps: () => ipcRenderer.invoke('apps:list'),
+  importDbFromPicker: () => ipcRenderer.invoke('db:import-from-picker'),
   resolveAppKey: (raw) => ipcRenderer.invoke('apps:resolve', raw),
   copyText: (text) => ipcRenderer.invoke('clipboard:copy', text),
   hideCapture: () => ipcRenderer.send('window:hide-capture'),

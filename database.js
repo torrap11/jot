@@ -12,6 +12,23 @@ let cachedNoteLinkMode = null;
 let _resolvedDbPath = null;
 /** Paths of secondary legacy DBs to merge after canonical DB is open (cleared after first run). */
 let _pendingSecondaryMerge = [];
+/** One-time marker for packaged builds to enforce blank-slate first launch. */
+const FIRST_LAUNCH_MARKER_FILE = '.first-launch-initialized';
+/** True when this process initialized packaged first launch. */
+let _wasPackagedFirstLaunch = false;
+const DB_FILENAME = 'jot.db';
+
+function getCanonicalDbPath() {
+  return path.join(app.getPath('userData'), DB_FILENAME);
+}
+
+function getProjectDbPath() {
+  return path.join(__dirname, DB_FILENAME);
+}
+
+function getFirstLaunchMarkerPath() {
+  return path.join(app.getPath('userData'), FIRST_LAUNCH_MARKER_FILE);
+}
 
 function firstExistingPath(paths) {
   for (const p of paths) {
@@ -21,13 +38,56 @@ function firstExistingPath(paths) {
 }
 
 function resolveDbPath() {
+  // In local dev (Cursor project), keep the DB in the repo for easy backup/import workflows.
+  if (!app.isPackaged) {
+    const projectDb = getProjectDbPath();
+    console.log('[db] dev mode DB path:', projectDb);
+    return projectDb;
+  }
+
   const userData = app.getPath('userData');
   const appName = app.getName();
   const appSupport = path.join(app.getPath('home'), 'Library', 'Application Support');
-  const canonical = path.join(userData, 'proactive-recall.db');
+  const canonical = getCanonicalDbPath();
+  const firstLaunchMarker = getFirstLaunchMarkerPath();
 
   console.log('[db] app.getName():', appName);
   console.log('[db] app.getPath(userData):', userData);
+
+  // Packaged app first launch should always start from a blank DB.
+  // Any pre-existing DB is preserved as a backup so users can import it manually.
+  if (app.isPackaged && !fs.existsSync(firstLaunchMarker)) {
+    fs.mkdirSync(userData, { recursive: true });
+    const backupSuffix = new Date().toISOString().replace(/[:.]/g, '-');
+    if (fs.existsSync(canonical)) {
+      const backupPath = path.join(userData, `jot.pre-first-launch-${backupSuffix}.db`);
+      try {
+        fs.renameSync(canonical, backupPath);
+        console.log('[db] first launch backup created:', backupPath);
+      } catch (err) {
+        console.error('[db] failed to backup existing canonical DB:', err.message);
+      }
+    }
+    for (const legacyPath of [
+      path.join(appSupport, 'proactive-recall', 'proactive-recall.db'),
+      path.join(appSupport, 'Proactive Recall', 'proactive-recall.db'),
+      path.join(userData, 'jot.db'),
+    ]) {
+      if (!fs.existsSync(legacyPath)) continue;
+      const legacyBase = path.basename(legacyPath, path.extname(legacyPath));
+      const legacyBackupPath = path.join(userData, `${legacyBase}.pre-first-launch-${backupSuffix}.db`);
+      try {
+        fs.copyFileSync(legacyPath, legacyBackupPath);
+        console.log('[db] first launch legacy backup copied:', legacyBackupPath);
+      } catch (err) {
+        console.error('[db] failed to backup legacy DB:', legacyPath, err.message);
+      }
+    }
+    fs.writeFileSync(firstLaunchMarker, new Date().toISOString());
+    _wasPackagedFirstLaunch = true;
+    console.log('[db] first launch initialized: blank canonical DB will be created');
+    return canonical;
+  }
 
   if (fs.existsSync(canonical)) {
     console.log('[db] resolved → canonical (exists):', canonical);
@@ -39,6 +99,7 @@ function resolveDbPath() {
   //   2. Proactive Recall/proactive-recall.db  – uppercase macOS variant
   //   3. jot/jot.db                            – old filename used by pre-rename packaged app
   const legacyCandidates = [
+    path.join(userData, 'proactive-recall.db'),
     path.join(appSupport, 'proactive-recall', 'proactive-recall.db'),
     path.join(appSupport, 'Proactive Recall', 'proactive-recall.db'),
     path.join(userData, 'jot.db'),
@@ -73,6 +134,38 @@ function resolveDbPath() {
   }
 
   return canonical;
+}
+
+function closeDb() {
+  if (!db) return;
+  db.close();
+  db = null;
+  cachedNoteLinkMode = null;
+  _resolvedDbPath = null;
+}
+
+function importDbFromFile(sourcePath) {
+  const src = String(sourcePath || '').trim();
+  if (!src) return null;
+  if (!fs.existsSync(src)) return null;
+
+  const targetPath = app.isPackaged ? getCanonicalDbPath() : getProjectDbPath();
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+
+  // Ensure SQLite handles are closed before replacing the active DB files.
+  closeDb();
+
+  const walPath = `${targetPath}-wal`;
+  const shmPath = `${targetPath}-shm`;
+  const tempImportPath = `${targetPath}.importing`;
+  if (fs.existsSync(walPath)) fs.rmSync(walPath, { force: true });
+  if (fs.existsSync(shmPath)) fs.rmSync(shmPath, { force: true });
+  if (fs.existsSync(tempImportPath)) fs.rmSync(tempImportPath, { force: true });
+
+  // Two-step replace to avoid readers seeing a partially copied DB file.
+  fs.copyFileSync(src, tempImportPath);
+  fs.renameSync(tempImportPath, targetPath);
+  return targetPath;
 }
 
 /**
@@ -839,8 +932,17 @@ function getDbPath() {
   return _resolvedDbPath;
 }
 
+function consumeWasPackagedFirstLaunch() {
+  const value = _wasPackagedFirstLaunch;
+  _wasPackagedFirstLaunch = false;
+  return value;
+}
+
 module.exports = {
   getDbPath,
+  consumeWasPackagedFirstLaunch,
+  closeDb,
+  importDbFromFile,
   createNote,
   updateNote,
   deleteNote,
