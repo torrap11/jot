@@ -4,15 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'" />
-  <title>Jot Search</title>
+  <title>Jot</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body class="search-body">
   <main class="search-shell">
     <div class="search-toolbar">
       <button id="import-db-btn" type="button">Import DB</button>
-      <button id="toolbar-api-key-btn" type="button" title="Anthropic API key for AI folder organize">API Key</button>
       <input id="query" type="search" placeholder="Search notes..." autofocus />
+    </div>
+    <div class="ai-key-access-row" aria-label="Anthropic API key">
+      <span id="ai-key-access-status" class="ai-key-access-status">Checking API key…</span>
+      <button id="ai-key-access-btn" type="button" title="Save or change your Anthropic API key">Set or update API key…</button>
     </div>
     <div class="prompt-toolbar">
       <input

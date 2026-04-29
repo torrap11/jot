@@ -16,7 +16,8 @@ const state = {
 
 const queryInput = document.getElementById('query');
 const importDbBtn = document.getElementById('import-db-btn');
-const toolbarApiKeyBtn = document.getElementById('toolbar-api-key-btn');
+const aiKeyAccessStatusEl = document.getElementById('ai-key-access-status');
+const aiKeyAccessBtn = document.getElementById('ai-key-access-btn');
 const promptInputEl = document.getElementById('prompt-input');
 const promptConfirmBtn = document.getElementById('prompt-confirm-btn');
 const folderDiagramEl = document.getElementById('folder-diagram');
@@ -877,13 +878,16 @@ function appendOrganizeBubble(role, text, isError) {
 }
 
 async function refreshAiKeyStatus() {
-  if (!organizeApiStatusEl) return;
+  let line = 'API status unavailable';
   try {
     const status = await window.mvp.getAiKeyStatus();
-    organizeApiStatusEl.textContent = status && status.hasKey ? 'API key set' : 'API key not set';
+    const hasKey = status && status.hasKey;
+    line = hasKey ? 'Anthropic API key is saved on this Mac.' : 'No Anthropic API key yet — set one to use AI organize.';
+    if (organizeApiStatusEl) organizeApiStatusEl.textContent = hasKey ? 'API key set' : 'API key not set';
   } catch (_error) {
-    organizeApiStatusEl.textContent = 'API status unavailable';
+    if (organizeApiStatusEl) organizeApiStatusEl.textContent = 'API status unavailable';
   }
+  if (aiKeyAccessStatusEl) aiKeyAccessStatusEl.textContent = line;
 }
 
 function showApiKeyModal() {
@@ -1069,7 +1073,7 @@ setApiKeyBtn?.addEventListener('click', () => {
   showApiKeyModal();
 });
 
-toolbarApiKeyBtn?.addEventListener('click', () => {
+aiKeyAccessBtn?.addEventListener('click', () => {
   showApiKeyModal();
 });
 

@@ -387,7 +387,7 @@ async function maybePromptFirstLaunchApiKeySetup(hadFirstLaunchOnboarding) {
     type: 'question',
     title: 'Set up AI organize',
     message: 'Do you want to set your Anthropic API key now?',
-    detail: 'You can skip this and add it later from the API Key button.',
+    detail: 'You can skip this and add it later using “Set or update API key…” or File → Anthropic API Key…',
     buttons: ['Set API Key Now', 'Later'],
     defaultId: 0,
     cancelId: 1,
@@ -408,6 +408,15 @@ function buildAppMenu() {
           label: 'Import Existing DB...',
           click: () => {
             void importExistingDbFromMenu();
+          },
+        },
+        {
+          label: 'Anthropic API Key…',
+          click: () => {
+            showSearchWindow();
+            if (searchWin && !searchWin.isDestroyed()) {
+              searchWin.webContents.send('ai:key:open-modal');
+            }
           },
         },
         { type: 'separator' },
