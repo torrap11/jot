@@ -9,7 +9,10 @@
 </head>
 <body class="search-body">
   <main class="search-shell">
-    <input id="query" type="search" placeholder="Search notes..." autofocus />
+    <div class="search-toolbar">
+      <button id="import-db-btn" type="button">Import DB</button>
+      <input id="query" type="search" placeholder="Search notes..." autofocus />
+    </div>
     <div class="prompt-toolbar">
       <input
         id="prompt-input"
@@ -26,20 +29,6 @@
         <span class="organize-hint">API: ANTHROPIC_API_KEY in .env — restart app after edits</span>
       </div>
       <div id="organize-messages" class="organize-messages"></div>
-      <div id="organize-plan-row" class="organize-plan-row hidden">
-        <label for="organize-plan-edit">Your request — edit here, then Update plan or Apply plan</label>
-        <textarea id="organize-plan-edit" rows="3" class="organize-plan-edit" placeholder="Refine what you asked for…"></textarea>
-        <div class="organize-plan-actions">
-          <button id="organize-update-plan" type="button">Update plan</button>
-        </div>
-      </div>
-      <div class="organize-compose">
-        <textarea id="organize-input" rows="2" placeholder="e.g. Group work notes by project, move receipts to Personal…"></textarea>
-        <div class="organize-actions">
-          <button id="organize-send" type="button">Send</button>
-          <button id="organize-apply" type="button" class="hidden">Apply plan</button>
-        </div>
-      </div>
     </section>
     <div id="bulk-actions" class="bulk-actions hidden">
       <span id="selected-count">0 selected</span>

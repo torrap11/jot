@@ -15,6 +15,7 @@ const state = {
 };
 
 const queryInput = document.getElementById('query');
+const importDbBtn = document.getElementById('import-db-btn');
 const promptInputEl = document.getElementById('prompt-input');
 const promptConfirmBtn = document.getElementById('prompt-confirm-btn');
 const folderDiagramEl = document.getElementById('folder-diagram');
@@ -37,19 +38,9 @@ const noteImagesEl = document.getElementById('note-images');
 const noteFilesEl = document.getElementById('note-files');
 const organizePanelEl = document.getElementById('organize-panel');
 const organizeMessagesEl = document.getElementById('organize-messages');
-const organizeInputEl = document.getElementById('organize-input');
-const organizeComposeEl = document.querySelector('.organize-compose');
-const organizeSendBtn = document.getElementById('organize-send');
-const organizeApplyBtn = document.getElementById('organize-apply');
-const organizePlanRowEl = document.getElementById('organize-plan-row');
-const organizePlanEditEl = document.getElementById('organize-plan-edit');
-const organizeUpdatePlanBtn = document.getElementById('organize-update-plan');
 
 let saveTimer = null;
 let organizeHistory = [];
-let organizePendingPlan = null;
-/** User message text that produced the current `organizePendingPlan` (for edit-then-Apply). */
-let organizePlanUserText = null;
 const linkHistory = {
   undo: [],
   redo: [],
@@ -546,6 +537,10 @@ queryInput.addEventListener('input', () => {
   runQuery(queryInput.value.trim());
 });
 
+importDbBtn?.addEventListener('click', async () => {
+  await window.mvp.importDbFromPicker();
+});
+
 promptInputEl.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
     event.preventDefault();
@@ -585,9 +580,22 @@ promptConfirmBtn?.addEventListener('click', () => {
   void applyPrompt();
 });
 
-function applyPrompt() {
+async function applyPrompt() {
   state.customPrompt = String(promptInputEl.value || '').trim();
-  return runQuery(queryInput.value.trim());
+  await runQuery(queryInput.value.trim());
+  if (!state.customPrompt) return;
+
+  const originalLabel = promptConfirmBtn?.textContent || 'Confirm';
+  promptConfirmBtn.disabled = true;
+  promptInputEl.disabled = true;
+  promptConfirmBtn.textContent = 'Working...';
+  try {
+    await runOrganizerFromPrompt(state.customPrompt);
+  } finally {
+    promptConfirmBtn.disabled = false;
+    promptInputEl.disabled = false;
+    promptConfirmBtn.textContent = originalLabel;
+  }
 }
 
 queryInput.addEventListener('keydown', (event) => {
@@ -859,37 +867,11 @@ function appendOrganizeBubble(role, text, isError) {
   organizeMessagesEl.scrollTop = organizeMessagesEl.scrollHeight;
 }
 
-function setOrganizeApplyVisible(show) {
-  organizeApplyBtn.classList.toggle('hidden', !show);
-}
-
-function setOrganizePlanRowVisible(show, initialText) {
-  organizePlanRowEl.classList.toggle('hidden', !show);
-  organizeComposeEl?.classList.toggle('hidden', show);
-  if (show && initialText != null) organizePlanEditEl.value = initialText;
-  if (!show) organizePlanEditEl.value = '';
-}
-
-function trimLastOrganizeExchangeFromDom() {
-  if (organizeHistory.length < 2) return;
-  organizeHistory.splice(-2, 2);
-  const ch = organizeMessagesEl.children;
-  if (ch.length >= 2) {
-    organizeMessagesEl.removeChild(ch[ch.length - 1]);
-    organizeMessagesEl.removeChild(ch[ch.length - 2]);
-  }
-}
-
-async function sendOrganizeMessage() {
-  const text = organizeInputEl.value.trim();
+async function runOrganizerFromPrompt(promptText) {
+  const text = String(promptText || '').trim();
   if (!text) return;
-  organizeInputEl.value = '';
+  organizePanelEl.classList.remove('hidden');
   appendOrganizeBubble('user', text, false);
-  organizeSendBtn.disabled = true;
-  organizePendingPlan = null;
-  organizePlanUserText = null;
-  setOrganizeApplyVisible(false);
-  setOrganizePlanRowVisible(false);
   try {
     const res = await window.mvp.organizeChat({
       userMessage: text,
@@ -899,106 +881,20 @@ async function sendOrganizeMessage() {
       let detail = res.error;
       if (res.raw) detail += `\n\n---\n${String(res.raw).slice(0, 2000)}`;
       appendOrganizeBubble('assistant', detail, true);
-    } else {
-      const hasPlan = Array.isArray(res.plan) && res.plan.length > 0;
-      if (!hasPlan) appendOrganizeBubble('assistant', res.reply, false);
-      organizeHistory.push({ role: 'user', content: text });
-      organizeHistory.push({ role: 'assistant', content: res.reply });
-      if (organizeHistory.length > 16) organizeHistory.splice(0, organizeHistory.length - 16);
-      if (hasPlan) {
-        organizePendingPlan = res.plan;
-        organizePlanUserText = text;
-        setOrganizeApplyVisible(true);
-        setOrganizePlanRowVisible(true, text);
-      }
+      return;
     }
-  } catch (e) {
-    appendOrganizeBubble('assistant', e.message || String(e), true);
-  } finally {
-    organizeSendBtn.disabled = false;
-  }
-}
 
-async function updateOrganizePlanFromEdit() {
-  const text = organizePlanEditEl.value.trim();
-  if (!text) return;
-  organizeSendBtn.disabled = true;
-  organizeUpdatePlanBtn.disabled = true;
-  organizePendingPlan = null;
-  organizePlanUserText = null;
-  setOrganizeApplyVisible(false);
-  trimLastOrganizeExchangeFromDom();
-  try {
-    const res = await window.mvp.organizeChat({
-      userMessage: text,
-      history: organizeHistory,
-    });
-    if (res.error) {
-      let detail = res.error;
-      if (res.raw) detail += `\n\n---\n${String(res.raw).slice(0, 2000)}`;
-      appendOrganizeBubble('user', text, false);
-      appendOrganizeBubble('assistant', detail, true);
-      organizeHistory.push({ role: 'user', content: text });
-      organizeHistory.push({ role: 'assistant', content: detail });
-      if (organizeHistory.length > 16) organizeHistory.splice(0, organizeHistory.length - 16);
-      setOrganizePlanRowVisible(false);
-    } else {
-      const hasPlan = Array.isArray(res.plan) && res.plan.length > 0;
-      appendOrganizeBubble('user', text, false);
-      if (!hasPlan) appendOrganizeBubble('assistant', res.reply, false);
-      organizeHistory.push({ role: 'user', content: text });
-      organizeHistory.push({ role: 'assistant', content: res.reply });
-      if (organizeHistory.length > 16) organizeHistory.splice(0, organizeHistory.length - 16);
-      if (hasPlan) {
-        organizePendingPlan = res.plan;
-        organizePlanUserText = text;
-        setOrganizeApplyVisible(true);
-        setOrganizePlanRowVisible(true, text);
-      } else {
-        setOrganizePlanRowVisible(false);
-      }
+    organizeHistory.push({ role: 'user', content: text });
+    organizeHistory.push({ role: 'assistant', content: res.reply });
+    if (organizeHistory.length > 16) organizeHistory.splice(0, organizeHistory.length - 16);
+
+    const hasPlan = Array.isArray(res.plan) && res.plan.length > 0;
+    if (!hasPlan) {
+      appendOrganizeBubble('assistant', res.reply || 'No organization changes suggested.', false);
+      return;
     }
-  } catch (e) {
-    appendOrganizeBubble('assistant', e.message || String(e), true);
-    setOrganizePlanRowVisible(false);
-  } finally {
-    organizeSendBtn.disabled = false;
-    organizeUpdatePlanBtn.disabled = false;
-  }
-}
 
-organizeSendBtn.addEventListener('click', () => {
-  void sendOrganizeMessage();
-});
-
-organizeInputEl.addEventListener('keydown', (event) => {
-  if (event.key !== 'Enter' || event.shiftKey) return;
-  event.preventDefault();
-  void sendOrganizeMessage();
-});
-
-organizeUpdatePlanBtn.addEventListener('click', () => {
-  void updateOrganizePlanFromEdit();
-});
-
-organizeApplyBtn.addEventListener('click', async () => {
-  if (!organizePendingPlan || organizePendingPlan.length === 0) return;
-  organizeApplyBtn.disabled = true;
-  try {
-    const edited = organizePlanEditEl.value.trim();
-    if (
-      edited &&
-      organizePlanUserText != null &&
-      edited !== organizePlanUserText
-    ) {
-      await updateOrganizePlanFromEdit();
-    }
-    if (!organizePendingPlan || organizePendingPlan.length === 0) return;
-    const result = await window.mvp.applyOrganizePlan(organizePendingPlan);
-    organizePendingPlan = null;
-    organizePlanUserText = null;
-    setOrganizeApplyVisible(false);
-    setOrganizePlanRowVisible(false);
+    const result = await window.mvp.applyOrganizePlan(res.plan);
     const summary = [
       result.applied.length ? `Done (${result.applied.length} steps).` : 'No steps applied.',
       result.errors.length ? `Issues: ${result.errors.join('; ')}` : '',
@@ -1010,16 +906,12 @@ organizeApplyBtn.addEventListener('click', async () => {
     await runQuery(queryInput.value.trim());
     if (state.activeId != null) {
       const note = await window.mvp.getNote(state.activeId);
-      if (note) {
-        editorFolderSelect.value = note.folder_id == null ? 'unfiled' : String(note.folder_id);
-      }
+      if (note) editorFolderSelect.value = note.folder_id == null ? 'unfiled' : String(note.folder_id);
     }
   } catch (e) {
     appendOrganizeBubble('assistant', e.message || String(e), true);
-  } finally {
-    organizeApplyBtn.disabled = false;
   }
-});
+}
 
 document.addEventListener('keydown', (event) => {
   if (!isTypingTarget(event.target) && isUndoShortcut(event)) {
