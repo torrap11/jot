@@ -497,8 +497,50 @@ button.folder-node:hover {
 }
 
 .search-shell.editor-open #results {
-  flex: 0 1 auto;
-  max-height: min(280px, 38vh);
+  flex: 1 1 auto;
+  min-height: 120px;
+}
+
+.editor-resizer {
+  height: 10px;
+  border-radius: 10px;
+  background: transparent;
+  position: relative;
+  cursor: ns-resize;
+  flex: 0 0 auto;
+  user-select: none;
+}
+
+.editor-resizer.hidden {
+  display: none;
+}
+
+.editor-resizer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 1px;
+  background: var(--separator);
+}
+
+.editor-resizer::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 44px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.editor-resizer:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .result-row {
@@ -633,8 +675,9 @@ button.folder-node:hover {
 }
 
 .search-shell.editor-open #editor {
-  flex: 1 1 auto;
+  flex: 0 0 var(--editor-panel-height, 52vh);
   min-height: 200px;
+  max-height: calc(100% - 120px);
   overflow-y: auto;
 }
 
@@ -718,7 +761,7 @@ button.folder-node:hover {
   background: var(--elevated);
   color: var(--text);
   padding: 10px;
-  resize: vertical;
+  resize: none;
   font-size: 14px;
 }
 

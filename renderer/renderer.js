@@ -26,6 +26,7 @@ const selectedCountEl = document.getElementById('selected-count');
 const deleteSelectedBtn = document.getElementById('delete-selected-btn');
 const resultsEl = document.getElementById('results');
 const editorEl = document.getElementById('editor');
+const editorResizerEl = document.getElementById('editor-resizer');
 const editorDateEl = document.getElementById('editor-date');
 const editorTextEl = document.getElementById('editor-text');
 const closeEditorBtn = document.getElementById('close-editor-btn');
@@ -51,6 +52,111 @@ const apiKeyCancelBtn = document.getElementById('api-key-cancel');
 const anthropicKeyLink = document.getElementById('anthropic-key-link');
 
 let saveTimer = null;
+
+const EDITOR_PANEL_HEIGHT_KEY = 'jot.editorPanelHeightPx.v1';
+function clampNumber(n, min, max) {
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
+}
+
+function readSavedEditorPanelHeightPx() {
+  try {
+    const raw = localStorage.getItem(EDITOR_PANEL_HEIGHT_KEY);
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSavedEditorPanelHeightPx(px) {
+  try {
+    localStorage.setItem(EDITOR_PANEL_HEIGHT_KEY, String(Math.round(px)));
+  } catch {
+    /* ignore */
+  }
+}
+
+function applyEditorPanelHeightPx(px) {
+  const shell = editorEl?.closest('.search-shell');
+  const content = shell?.querySelector('.search-content');
+  if (!shell || !content) return;
+  content.style.setProperty('--editor-panel-height', `${Math.round(px)}px`);
+}
+
+function clearEditorPanelHeight() {
+  const shell = editorEl?.closest('.search-shell');
+  const content = shell?.querySelector('.search-content');
+  if (!shell || !content) return;
+  content.style.removeProperty('--editor-panel-height');
+}
+
+function ensureEditorResizerVisibility(isOpen) {
+  if (!editorResizerEl) return;
+  editorResizerEl.classList.toggle('hidden', !isOpen);
+}
+
+function clampEditorPanelHeightToLayout(px) {
+  const shell = editorEl?.closest('.search-shell');
+  const content = shell?.querySelector('.search-content');
+  if (!content) return px;
+  const contentH = content.clientHeight || 0;
+  const minEditor = 220;
+  const minResults = 140;
+  const maxEditor = Math.max(minEditor, contentH - minResults - 10);
+  return clampNumber(px, minEditor, maxEditor);
+}
+
+function initEditorResizer() {
+  if (!editorResizerEl || !editorEl) return;
+
+  const reset = () => {
+    clearEditorPanelHeight();
+    try { localStorage.removeItem(EDITOR_PANEL_HEIGHT_KEY); } catch { /* ignore */ }
+  };
+
+  editorResizerEl.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    reset();
+  });
+
+  editorResizerEl.addEventListener('mousedown', (e) => {
+    if (editorResizerEl.classList.contains('hidden')) return;
+    if (e.button !== 0) return;
+    e.preventDefault();
+
+    const startY = e.clientY;
+    const startHeight = editorEl.getBoundingClientRect().height;
+    const prevUserSelect = document.body.style.userSelect;
+    const prevCursor = document.body.style.cursor;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ns-resize';
+
+    const onMove = (ev) => {
+      const dy = ev.clientY - startY;
+      const next = clampEditorPanelHeightToLayout(startHeight - dy);
+      applyEditorPanelHeightPx(next);
+      writeSavedEditorPanelHeightPx(next);
+    };
+
+    const onUp = () => {
+      document.body.style.userSelect = prevUserSelect;
+      document.body.style.cursor = prevCursor;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  });
+
+  editorResizerEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    clearEditorPanelHeight();
+    try { localStorage.removeItem(EDITOR_PANEL_HEIGHT_KEY); } catch { /* ignore */ }
+  });
+}
 const linkHistory = {
   undo: [],
   redo: [],
@@ -155,6 +261,7 @@ function closeEditor() {
   state.activeId = null;
   resetLinkHistory();
   editorEl.closest('.search-shell')?.classList.remove('editor-open');
+  ensureEditorResizerVisibility(false);
   editorEl.classList.add('hidden');
   editorTextEl.value = '';
   editorFolderSelect.value = 'unfiled';
@@ -417,10 +524,13 @@ async function openNote(noteId) {
   state.listFocusId = note.id;
   if (switchedNotes) resetLinkHistory();
   editorEl.classList.remove('hidden');
+  ensureEditorResizerVisibility(true);
   editorDateEl.textContent = formatDate(note.created_at);
   editorTextEl.value = note.text;
   editorFolderSelect.value = note.folder_id == null ? 'unfiled' : String(note.folder_id);
   editorEl.closest('.search-shell')?.classList.add('editor-open');
+  const saved = readSavedEditorPanelHeightPx();
+  if (saved) applyEditorPanelHeightPx(clampEditorPanelHeightToLayout(saved));
   renderResults();
   await renderLinks();
   await renderNoteImages();
@@ -1169,6 +1279,7 @@ chatInputEl?.addEventListener('keydown', (e) => {
 });
 
 async function init() {
+  initEditorResizer();
   await loadApps();
   await loadFolders();
   await runQuery('');

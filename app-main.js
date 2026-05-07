@@ -40,10 +40,21 @@ let lastSurfaceAt = 0;
 let lastSurfaceAppKey = '';
 let isImportingDb = false;
 
+let demoMode = false;
+let demoSceneIndex = 0;
+
+const DEMO_SCENES = [
+  { appKey: 'com.microsoft.VSCode',       appName: 'Visual Studio Code' },
+  { appKey: 'com.tinyspeck.slackmacgap',  appName: 'Slack' },
+  { appKey: 'com.google.Chrome',           appName: 'Google Chrome' },
+  { appKey: 'us.zoom.xos',                 appName: 'Zoom' },
+  { appKey: 'com.apple.mail',              appName: 'Mail' },
+];
+
 const APP_CONFIG = {
   maxSurfacedNotes: 3,
   minGapMsBetweenSurfacing: 15 * 1000,
-  overlayDismissMs: 10000,
+  overlayDismissMs: 12000,
   defaultSnoozeMinutes: 30,
 };
 
@@ -239,8 +250,10 @@ function getOverlayWindow() {
   if (overlayWin && !overlayWin.isDestroyed()) return overlayWin;
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
   overlayWin = new BrowserWindow({
-    width: 360,
-    height: 220,
+    width: 400,
+    height: 260,
+    transparent: true,
+    backgroundColor: '#00000000',
     x: sw - 375,
     y: sh - 240,
     frame: false,
@@ -248,6 +261,8 @@ function getOverlayWindow() {
     resizable: false,
     alwaysOnTop: true,
     skipTaskbar: true,
+    vibrancy: 'under-window',
+    visualEffectState: 'active',
     webPreferences: {
       preload: path.join(__dirname, 'overlay', 'overlay-preload.js'),
       contextIsolation: true,
@@ -348,20 +363,41 @@ function hideSearchWindow() {
   if (searchWin && !searchWin.isDestroyed()) searchWin.hide();
 }
 
-function showOverlay(appKey, notes) {
+function triggerDemoScene(index) {
+  const scene = DEMO_SCENES[index % DEMO_SCENES.length];
+  const picked = surface.pickSurfacedNotes({
+    bundleId: scene.appKey,
+    appName: scene.appName,
+    db,
+    catalog: KNOWN_APPS,
+    limit: APP_CONFIG.maxSurfacedNotes,
+    recentTransitions: [],
+  });
+  // Bypass the surfacing gap check for demo mode
+  lastSurfaceAt = 0;
+  lastSurfaceAppKey = '';
+  if (picked.notes.length > 0) {
+    showOverlay(scene.appKey, picked.notes, scene.appName);
+  }
+}
+
+function showOverlay(appKey, notes, appNameOverride) {
   if (!notes || notes.length === 0) return;
   const now = Date.now();
   if (now - lastSurfaceAt < APP_CONFIG.minGapMsBetweenSurfacing && lastSurfaceAppKey === appKey) return;
   lastSurfaceAt = now;
   lastSurfaceAppKey = appKey;
 
+  const noteIds = notes.map((n) => n.id);
+  db.recordSurfaceEventBatch(noteIds, appKey, 'surfaced');
+
   const win = getOverlayWindow();
   const { width: sw, height: sh } = screen.getPrimaryDisplay().workAreaSize;
-  win.setPosition(sw - 375, sh - 240);
+  win.setPosition(sw - 395, sh - 260);
 
   const payload = {
     appKey,
-    appName: BUNDLE_ID_TO_NAME[appKey] || appKey,
+    appName: appNameOverride || BUNDLE_ID_TO_NAME[appKey] || appKey,
     notes: notes.map((note) => ({ id: note.id, text: note.text })),
     autoDismissMs: APP_CONFIG.overlayDismissMs,
   };
@@ -382,6 +418,16 @@ function hideOverlay() {
 
 function registerShortcuts() {
   globalShortcut.register('CommandOrControl+P', () => showSearchWindow());
+  globalShortcut.register('CommandOrControl+Shift+D', () => {
+    if (!demoMode) {
+      demoMode = true;
+      demoSceneIndex = 0;
+      db.seedDemoData();
+      notifySearchNotesChanged();
+    }
+    triggerDemoScene(demoSceneIndex);
+    demoSceneIndex++;
+  });
 }
 
 async function importExistingDbFromMenu() {
@@ -607,6 +653,7 @@ function startWatcher() {
         db,
         catalog: KNOWN_APPS,
         limit: APP_CONFIG.maxSurfacedNotes,
+        recentTransitions: watcher.getRecentTransitions(),
       });
       if (!picked.appKey || picked.notes.length === 0) return;
       showOverlay(picked.appKey, picked.notes);
@@ -847,6 +894,17 @@ function registerIpc() {
     }
   });
 
+  ipcMain.handle('app:get-active', () => ({
+    bundleId: lastSurfaceAppKey,
+    appName: BUNDLE_ID_TO_NAME[lastSurfaceAppKey] || lastSurfaceAppKey || '',
+  }));
+
+  ipcMain.handle('demo:seed', async () => {
+    const result = db.seedDemoData();
+    notifySearchNotesChanged();
+    return result;
+  });
+
   ipcMain.handle('ai:organize-chat', async (_event, payload) => {
     const userMessage = String((payload && payload.userMessage) || '').trim();
     if (!userMessage) return { error: 'Empty message' };
@@ -888,19 +946,23 @@ function registerIpc() {
   ipcMain.on('window:show-capture', showCaptureWindow);
 
   ipcMain.on('overlay-open-note', (_event, noteId) => {
+    db.recordSurfaceEvent(noteId, lastSurfaceAppKey, 'opened');
     hideOverlay();
     showSearchWindow({ openNoteId: noteId });
   });
   ipcMain.on('overlay-snooze', (_event, noteId, appKey, minutes) => {
+    db.recordSurfaceEvent(noteId, appKey, 'snoozed');
     db.snoozeNote(noteId, appKey, Number(minutes) || APP_CONFIG.defaultSnoozeMinutes);
     hideOverlay();
   });
   ipcMain.on('overlay-complete', (_event, noteId) => {
+    db.recordSurfaceEvent(noteId, lastSurfaceAppKey, 'completed');
     db.completeNote(noteId);
     hideOverlay();
     notifySearchNotesChanged();
   });
   ipcMain.on('overlay-disable', (_event, noteId, appKey) => {
+    db.recordSurfaceEvent(noteId, appKey, 'dismissed');
     db.dismissNote(noteId, appKey);
     hideOverlay();
   });

@@ -10,6 +10,7 @@ function mockDb(overrides = {}) {
   return {
     getNotesLinkedToApp: () => [],
     getKeywordCandidates: () => [],
+    getNoteSurfaceScore: () => 0,
     canSurfaceNote: () => true,
     recordSurfaced: () => {},
     ...overrides,

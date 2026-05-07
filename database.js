@@ -329,6 +329,17 @@ function getDb() {
       app_key TEXT NOT NULL,
       PRIMARY KEY (folder_id, app_key)
     );
+
+    CREATE TABLE IF NOT EXISTS surface_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      app_key TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_surface_events_note ON surface_events(note_id);
+    CREATE INDEX IF NOT EXISTS idx_surface_events_app ON surface_events(app_key, event_type);
   `);
 
   migrateLegacy();
@@ -1152,6 +1163,100 @@ function seedScreenshotDemoState() {
   };
 }
 
+function recordSurfaceEvent(noteId, appKey, eventType) {
+  try {
+    getDb()
+      .prepare("INSERT INTO surface_events (note_id, app_key, event_type, timestamp) VALUES (?, ?, ?, datetime('now'))")
+      .run(noteId, appKey, eventType);
+  } catch (_err) {
+    // Non-critical — don't let analytics failures break the app
+  }
+}
+
+function recordSurfaceEventBatch(noteIds, appKey, eventType) {
+  const stmt = getDb().prepare(
+    "INSERT INTO surface_events (note_id, app_key, event_type, timestamp) VALUES (?, ?, ?, datetime('now'))"
+  );
+  const insertMany = getDb().transaction((ids) => {
+    for (const id of ids) stmt.run(id, appKey, eventType);
+  });
+  try {
+    insertMany(noteIds);
+  } catch (_err) {
+    // Non-critical
+  }
+}
+
+function getNoteSurfaceScore(noteId, appKey) {
+  try {
+    const row = getDb().prepare(`
+      SELECT
+        SUM(CASE WHEN event_type = 'opened' THEN 1 ELSE 0 END) AS opens,
+        MAX(CASE WHEN event_type = 'opened' THEN timestamp ELSE NULL END) AS last_opened
+      FROM surface_events
+      WHERE note_id = ? AND app_key = ?
+    `).get(noteId, appKey);
+    if (!row || !row.opens) return 0;
+    const daysSinceOpen = row.last_opened
+      ? (Date.now() - new Date(row.last_opened).getTime()) / 86400000
+      : 999;
+    const recencyBonus = Math.max(0, 1 - daysSinceOpen / 7);
+    return Math.min(1.0, row.opens * 0.2 + recencyBonus * 0.5);
+  } catch (_err) {
+    return 0;
+  }
+}
+
+const DEMO_SCENES = [
+  { appKey: 'com.microsoft.VSCode',       appName: 'Visual Studio Code' },
+  { appKey: 'com.tinyspeck.slackmacgap',  appName: 'Slack' },
+  { appKey: 'com.google.Chrome',           appName: 'Google Chrome' },
+  { appKey: 'us.zoom.xos',                 appName: 'Zoom' },
+  { appKey: 'com.apple.mail',              appName: 'Mail' },
+];
+
+const DEMO_SEED_NOTES = [
+  { text: 'Fix overlay animation jank before demo — repro: switch apps 10x rapidly', appKey: 'com.microsoft.VSCode' },
+  { text: 'Perf goal: overlay must appear in <300ms from app switch', appKey: 'com.microsoft.VSCode' },
+  { text: 'TODO: keyboard shortcut guide in overlay (K open · S snooze · D dismiss)', appKey: 'com.microsoft.VSCode' },
+  { text: 'YC partner meeting tomorrow 10am — review retention metrics beforehand', appKey: 'com.tinyspeck.slackmacgap' },
+  { text: 'Ask team: "proactive memory" vs "context engine" — which framing lands better?', appKey: 'com.tinyspeck.slackmacgap' },
+  { text: 'Send Priya the onboarding flow mockups before EOD', appKey: 'com.tinyspeck.slackmacgap' },
+  { text: 'Key insight from Superhuman research: users value "feel smart" over "save time"', appKey: 'com.google.Chrome' },
+  { text: 'Competitor note: Rewind stores everything, we surface what matters — core diff', appKey: 'com.google.Chrome' },
+  { text: 'YC essay draft — finish retention section before Monday office hours', appKey: 'com.google.Chrome' },
+  { text: 'YC partners to know: Dalton Caldwell (cares about retention), Jared Friedman (AI tools)', appKey: 'us.zoom.xos' },
+  { text: 'Key metrics: 40% D7 retention · 8 captures/day avg · 3min avg session', appKey: 'us.zoom.xos' },
+  { text: 'Demo flow: capture note → switch app → overlay fires → open note → ~45s total', appKey: 'us.zoom.xos' },
+  { text: 'Reply to Series A interest — warm intro from Garry Tan, respond by Thursday', appKey: 'com.apple.mail' },
+  { text: 'User interview follow-up: David (Figma PM) had strong signal on knowledge worker pain', appKey: 'com.apple.mail' },
+  { text: 'YC application confirm deadline is this Friday — do not miss this', appKey: 'com.apple.mail' },
+];
+
+function seedDemoData() {
+  const database = getDb();
+  const dbPath = _resolvedDbPath;
+
+  const deleteLinks = database.prepare('DELETE FROM note_app_links WHERE note_id IN (SELECT id FROM notes WHERE text IN (' + DEMO_SEED_NOTES.map(() => '?').join(',') + '))');
+  const deleteNotes = database.prepare('DELETE FROM notes WHERE text IN (' + DEMO_SEED_NOTES.map(() => '?').join(',') + ')');
+  const texts = DEMO_SEED_NOTES.map(n => n.text);
+
+  const insertNote = database.prepare("INSERT INTO notes (text, created_at, updated_at) VALUES (?, datetime('now'), datetime('now'))");
+  const insertLink = database.prepare('INSERT OR IGNORE INTO note_app_links (note_id, app_key) VALUES (?, ?)');
+
+  const seed = database.transaction(() => {
+    deleteLinks.run(...texts);
+    deleteNotes.run(...texts);
+    for (const note of DEMO_SEED_NOTES) {
+      const info = insertNote.run(note.text);
+      insertLink.run(info.lastInsertRowid, note.appKey);
+    }
+  });
+
+  seed();
+  return { notes: DEMO_SEED_NOTES.length, dbPath };
+}
+
 module.exports = {
   getDbPath,
   consumeWasPackagedFirstLaunch,
@@ -1193,6 +1298,10 @@ module.exports = {
   getKeywordCandidates,
   canSurfaceNote,
   recordSurfaced,
+  recordSurfaceEvent,
+  recordSurfaceEventBatch,
+  getNoteSurfaceScore,
+  seedDemoData,
   snoozeNote,
   dismissNote,
 };

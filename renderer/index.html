@@ -10,14 +10,7 @@
 <body class="search-body">
   <main class="search-shell">
     <div class="search-toolbar">
-      <button id="import-db-btn" type="button">Import DB</button>
-      <button id="export-db-btn" type="button">Export DB</button>
       <input id="query" type="search" placeholder="Search notes..." autofocus />
-      <button id="ai-chat-btn" type="button" class="ai-chat-toolbar-btn" title="Ask AI about your notes">Ask AI</button>
-    </div>
-    <div class="ai-key-access-row" aria-label="Anthropic API key">
-      <span id="ai-key-access-status" class="ai-key-access-status">Checking API key…</span>
-      <button id="ai-key-access-btn" type="button" title="Save or change your Anthropic API key">Set or update API key…</button>
     </div>
     <section id="folder-diagram" class="folder-diagram" aria-label="Folder structure diagram">
       <div class="folder-diagram-header">
@@ -32,6 +25,14 @@
     </div>
     <div class="search-content">
       <div id="results"></div>
+      <div
+        id="editor-resizer"
+        class="editor-resizer hidden"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize editor panel"
+        tabindex="0"
+      ></div>
       <section id="editor" class="hidden">
         <div class="editor-meta">
           <span id="editor-date"></span>

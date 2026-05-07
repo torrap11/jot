@@ -51,4 +51,6 @@ contextBridge.exposeInMainWorld('mvp', {
   getAiKeyStatus: () => ipcRenderer.invoke('ai:key:get-status'),
   setAiKey: (apiKey) => ipcRenderer.invoke('ai:key:set', apiKey),
   openExternalUrl: (url) => ipcRenderer.invoke('external:open-url', url),
+  getActiveApp: () => ipcRenderer.invoke('app:get-active'),
+  seedDemo: () => ipcRenderer.invoke('demo:seed'),
 });

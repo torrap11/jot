@@ -21,6 +21,19 @@ let intervalId           = null;
 let lastSignature        = '';
 let permErrLogged        = false;
 
+const TRANSITION_BUFFER_SIZE = 5;
+const _appTransitions = [];
+
+function pushTransition(bundleId) {
+  if (!bundleId) return;
+  _appTransitions.push(bundleId);
+  if (_appTransitions.length > TRANSITION_BUFFER_SIZE) _appTransitions.shift();
+}
+
+function getRecentTransitions() {
+  return [..._appTransitions];
+}
+
 /** Run an AppleScript snippet, resolve to trimmed stdout or null on error. */
 function runOsascript(source) {
   return new Promise((resolve) => {
@@ -90,6 +103,7 @@ function startWatcher({ onAppSwitch, getConfig }) {
 
     console.log(`[appWatcher] Frontmost: "${proc.appName}" (${proc.bundleId || 'no bundle id'})`);
     try {
+      pushTransition(proc.bundleId);
       onAppSwitch(proc.bundleId, proc.appName);
     } catch (error) {
       console.error('[appWatcher] onAppSwitch failed:', error.message || error);
@@ -104,4 +118,4 @@ function stopWatcher() {
 /** Reset the cached signature so the next poll re-fires (e.g. after settings change). */
 function resetSignature() { lastSignature = ''; }
 
-module.exports = { startWatcher, stopWatcher, resetSignature };
+module.exports = { startWatcher, stopWatcher, resetSignature, getRecentTransitions };
