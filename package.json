@@ -25,6 +25,7 @@
       "surfaceEngine.js",
       "noteAppScan.js",
       "knownApps.js",
+      "remindWorkflowParser.js",
       "aiOrganize.js",
       "renderer/**/*",
       "overlay/**/*",

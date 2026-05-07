@@ -6,7 +6,20 @@
  * frontmost-app polling → surfaceEngine → overlay.
  */
 
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, clipboard, dialog, shell, Menu } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  globalShortcut,
+  ipcMain,
+  screen,
+  clipboard,
+  dialog,
+  shell,
+  Menu,
+  protocol,
+  session,
+} = require('electron');
+const { execFileSync } = require('child_process');
 const fs = require('fs/promises');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -15,6 +28,7 @@ const db = require('./database');
 const watcher = require('./appWatcher');
 const surface = require('./surfaceEngine');
 const { KNOWN_APPS, BUNDLE_ID_TO_NAME, resolveInputToBundleId } = require('./knownApps');
+const { parseRemindWorkflowText } = require('./remindWorkflowParser');
 const aiOrganize = require('./aiOrganize');
 
 const PRELOAD_MAIN = path.join(__dirname, 'preload.js');
@@ -32,6 +46,14 @@ const APP_CONFIG = {
   overlayDismissMs: 10000,
   defaultSnoozeMinutes: 30,
 };
+
+/** Lets the search renderer load attachments without file:// or huge data: IPC payloads. */
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'jot-image',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, bypassCSP: true },
+  },
+]);
 
 const MIME_TO_EXT = {
   'image/png': '.png',
@@ -76,23 +98,10 @@ function toImagePayload(row) {
     note_id: row.note_id,
     created_at: row.created_at,
     image_path: row.image_path,
+    /** Prefer this in the UI — works under CSP and avoids giant data URLs in IPC. */
+    asset_url: `jot-image://image/${row.id}`,
     file_url: pathToFileURL(row.image_path).href,
   };
-}
-
-async function toImagePayloadWithData(row) {
-  const payload = toImagePayload(row);
-  try {
-    const buf = await fs.readFile(row.image_path);
-    if (!buf || buf.length === 0) {
-      payload.data_url = null;
-      return payload;
-    }
-    payload.data_url = `data:${mimeForImagePath(row.image_path)};base64,${buf.toString('base64')}`;
-  } catch (_error) {
-    payload.data_url = null;
-  }
-  return payload;
 }
 
 function parseImageDataUrl(dataUrl) {
@@ -254,10 +263,46 @@ function getOverlayWindow() {
   return overlayWin;
 }
 
-function centerWindowOnCursorDisplay(win) {
+/**
+ * Prefer the display of the frontmost app's focused window (where the user is working).
+ * Falls back to the mouse cursor, then primary display, if System Events is unavailable.
+ */
+function getPlacementAnchorPoint() {
+  if (process.platform === 'darwin') {
+    try {
+      const script = [
+        'tell application "System Events"',
+        '  tell (first process whose frontmost is true)',
+        '    tell window 1',
+        '      set px to item 1 of position',
+        '      set py to item 2 of position',
+        '      set sw to item 1 of size',
+        '      set sh to item 2 of size',
+        '      return (px as text) & "," & (py as text) & "," & (sw as text) & "," & (sh as text)',
+        '    end tell',
+        '  end tell',
+        'end tell',
+      ].join('\n');
+      const out = execFileSync('osascript', ['-e', script], { encoding: 'utf8', timeout: 800 }).trim();
+      const parts = out.split(',').map((p) => Number(String(p).trim()));
+      if (parts.length === 4 && parts.every((n) => Number.isFinite(n))) {
+        const [x, y, w, h] = parts;
+        return { x: Math.round(x + w / 2), y: Math.round(y + h / 2) };
+      }
+    } catch {
+      /* Accessibility off, menu bar app with no window, etc. */
+    }
+  }
+  return screen.getCursorScreenPoint();
+}
+
+function centerWindowOnContextDisplay(win) {
   if (!win || win.isDestroyed()) return;
-  const pointer = screen.getCursorScreenPoint();
-  const display = screen.getDisplayNearestPoint(pointer);
+  let anchor = getPlacementAnchorPoint();
+  let display = screen.getDisplayNearestPoint(anchor);
+  if (!display || !display.workArea) {
+    display = screen.getPrimaryDisplay();
+  }
   const area = display.workArea;
   const bounds = win.getBounds();
   const x = Math.round(area.x + (area.width - bounds.width) / 2);
@@ -270,8 +315,8 @@ function showCaptureWindow() {
 
   const present = () => {
     if (!captureWin || captureWin.isDestroyed()) return;
-    centerWindowOnCursorDisplay(captureWin);
     captureWin.show();
+    centerWindowOnContextDisplay(captureWin);
     captureWin.focus();
     captureWin.webContents.send('capture:focus');
   };
@@ -289,8 +334,8 @@ function showSearchWindow(payload = {}) {
 
   const present = () => {
     if (!searchWin || searchWin.isDestroyed()) return;
-    centerWindowOnCursorDisplay(searchWin);
     searchWin.show();
+    centerWindowOnContextDisplay(searchWin);
     searchWin.focus();
     searchWin.webContents.send('search:focus', payload);
   };
@@ -388,6 +433,34 @@ async function importExistingDbFromMenu() {
   }
 }
 
+async function dedupeNotesFromMenu() {
+  const parentWindow = searchWin || captureWin || null;
+  try {
+    const result = db.deduplicateNotesByTextAndCreatedAt();
+    if (result.removed === 0) {
+      await dialog.showMessageBox(parentWindow || undefined, {
+        type: 'info',
+        title: 'No duplicates',
+        message: 'No duplicate notes were found (same text and timestamp).',
+      });
+      return;
+    }
+    void cleanupImagePaths([...result.imagePaths, ...result.filePaths]);
+    notifySearchNotesChanged();
+    await dialog.showMessageBox(parentWindow || undefined, {
+      type: 'info',
+      title: 'Duplicates removed',
+      message: `Removed ${result.removed} duplicate note(s) in ${result.groups} group(s). The oldest copy in each group was kept.`,
+    });
+  } catch (error) {
+    await dialog.showMessageBox(parentWindow || undefined, {
+      type: 'error',
+      title: 'Could not remove duplicates',
+      message: error && error.message ? error.message : String(error),
+    });
+  }
+}
+
 async function exportDbFromMenu() {
   const parentWindow = searchWin || captureWin || null;
   const stamp = new Date().toISOString().slice(0, 10);
@@ -445,9 +518,9 @@ async function maybePromptFirstLaunchApiKeySetup(hadFirstLaunchOnboarding) {
   const parentWindow = searchWin || captureWin || null;
   const result = await dialog.showMessageBox(parentWindow, {
     type: 'question',
-    title: 'Set up AI organize',
+    title: 'Set up AI auto-filing',
     message: 'Do you want to set your Anthropic API key now?',
-    detail: 'You can skip this and add it later using “Set or update API key…” or File → Anthropic API Key…',
+    detail: 'Jot uses it to automatically file new notes into folders. You can skip this and add it later using “Set or update API key…” or File → Anthropic API Key…',
     buttons: ['Set API Key Now', 'Later'],
     defaultId: 0,
     cancelId: 1,
@@ -474,6 +547,12 @@ function buildAppMenu() {
           label: 'Export Database…',
           click: () => {
             void exportDbFromMenu();
+          },
+        },
+        {
+          label: 'Remove Duplicate Notes…',
+          click: () => {
+            void dedupeNotesFromMenu();
           },
         },
         {
@@ -585,6 +664,14 @@ function registerIpc() {
     }
   });
 
+  ipcMain.handle('capture:parse-remind-workflow', async (_event, rawText) => {
+    try {
+      return parseRemindWorkflowText(rawText);
+    } catch (_err) {
+      return null;
+    }
+  });
+
   ipcMain.handle('capture:save', (_event, text, appKey) => {
     const note = db.createNote(text);
     if (note && appKey) db.linkNoteToApp(note.id, appKey);
@@ -648,15 +735,20 @@ function registerIpc() {
     if (folder) notifySearchNotesChanged();
     return folder;
   });
+  ipcMain.handle('folders:delete', (_event, folderId) => {
+    const ok = db.deleteFolder(folderId);
+    if (ok) notifySearchNotesChanged();
+    return ok;
+  });
   ipcMain.handle('apps:resolve', (_event, raw) => resolveInputToBundleId(raw));
   ipcMain.handle('clipboard:copy', (_event, text) => {
     clipboard.writeText(String(text || ''));
     return true;
   });
   ipcMain.handle('clipboard:read', () => clipboard.readText());
-  ipcMain.handle('note-images:list', async (_event, noteId) => {
+  ipcMain.handle('note-images:list', (_event, noteId) => {
     const rows = db.listNoteImages(noteId);
-    return Promise.all(rows.map((row) => toImagePayloadWithData(row)));
+    return rows.map((row) => toImagePayload(row));
   });
   ipcMain.handle('note-images:add-from-data-url', async (_event, noteId, dataUrl) => {
     const note = db.getNote(noteId);
@@ -741,9 +833,14 @@ function registerIpc() {
 
   ipcMain.handle('note-files:open', async (_event, noteId, fileId) => {
     const row = db.getNoteFile(noteId, fileId);
-    if (!row) return false;
+    if (!row || !row.file_path) return false;
+    const filesBaseDir = path.join(app.getPath('userData'), 'note-files');
+    const resolvedFilePath = path.resolve(row.file_path);
+    if (!resolvedFilePath.startsWith(filesBaseDir + path.sep) && resolvedFilePath !== filesBaseDir) {
+      return false;
+    }
     try {
-      await shell.openPath(row.file_path);
+      await shell.openPath(resolvedFilePath);
       return true;
     } catch (_error) {
       return false;
@@ -756,6 +853,20 @@ function registerIpc() {
     const history = Array.isArray(payload && payload.history) ? payload.history : [];
     try {
       return await aiOrganize.organizeChat(db, {
+        history,
+        userMessage,
+        userDataDir: app.getPath('userData'),
+      });
+    } catch (e) {
+      return { error: e.message || String(e) };
+    }
+  });
+  ipcMain.handle('ai:night-chat', async (_event, payload) => {
+    const userMessage = String((payload && payload.userMessage) || '').trim();
+    if (!userMessage) return { error: 'Empty message' };
+    const history = Array.isArray(payload && payload.history) ? payload.history : [];
+    try {
+      return await aiOrganize.nightChat(db, {
         history,
         userMessage,
         userDataDir: app.getPath('userData'),
@@ -797,6 +908,34 @@ function registerIpc() {
 }
 
 app.whenReady().then(async () => {
+  session.defaultSession.protocol.handle('jot-image', async (request) => {
+    let u;
+    try {
+      u = new URL(request.url);
+    } catch {
+      return new Response(null, { status: 400 });
+    }
+    if (u.hostname !== 'image') return new Response(null, { status: 404 });
+    const idPart = String(u.pathname || '').replace(/^\//, '');
+    const imageId = Number(idPart);
+    if (!Number.isFinite(imageId) || imageId < 1) return new Response(null, { status: 404 });
+    const row = db.getNoteImageById(imageId);
+    if (!row || !row.image_path) return new Response(null, { status: 404 });
+    const imageBaseDir = path.join(app.getPath('userData'), 'note-images');
+    const resolvedImagePath = path.resolve(row.image_path);
+    if (!resolvedImagePath.startsWith(imageBaseDir + path.sep) && resolvedImagePath !== imageBaseDir) {
+      return new Response(null, { status: 403 });
+    }
+    try {
+      const buf = await fs.readFile(resolvedImagePath);
+      if (!buf || buf.length === 0) return new Response(null, { status: 404 });
+      const mime = mimeForImagePath(row.image_path);
+      return new Response(buf, { headers: { 'Content-Type': mime } });
+    } catch {
+      return new Response(null, { status: 404 });
+    }
+  });
+
   // Eagerly open the DB so first launch always creates an initial blank DB file.
   console.log('[app] app.getName():', app.getName());
   console.log('[app] app.getPath(userData):', app.getPath('userData'));

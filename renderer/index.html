@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: file:" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: jot-image:" />
   <title>Jot</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -13,68 +13,58 @@
       <button id="import-db-btn" type="button">Import DB</button>
       <button id="export-db-btn" type="button">Export DB</button>
       <input id="query" type="search" placeholder="Search notes..." autofocus />
+      <button id="ai-chat-btn" type="button" class="ai-chat-toolbar-btn" title="Ask AI about your notes">Ask AI</button>
     </div>
     <div class="ai-key-access-row" aria-label="Anthropic API key">
       <span id="ai-key-access-status" class="ai-key-access-status">Checking API key…</span>
       <button id="ai-key-access-btn" type="button" title="Save or change your Anthropic API key">Set or update API key…</button>
     </div>
-    <div class="prompt-toolbar">
-      <input
-        id="prompt-input"
-        type="text"
-        placeholder="Optional: describe how to reorder or slice the notes list (e.g. stopped talking about…)."
-        aria-label="Open-ended note prompt"
-      />
-      <button id="prompt-confirm-btn" type="button">Confirm</button>
-    </div>
-    <section id="folder-diagram" class="folder-diagram" aria-label="Folder structure diagram"></section>
-    <section id="organize-panel" class="organize-panel hidden" aria-label="AI folder organizer">
-      <div class="organize-head">
-        <span class="organize-title">Organize folders with AI</span>
-        <div class="organize-head-actions">
-          <span id="organize-api-status" class="organize-hint">API key not set</span>
-          <button id="set-api-key-btn" type="button">Set API Key</button>
-        </div>
+    <section id="folder-diagram" class="folder-diagram" aria-label="Folder structure diagram">
+      <div class="folder-diagram-header">
+        <span class="folder-diagram-title">Folder structure diagram</span>
+        <button type="button" id="new-folder-btn">New folder</button>
       </div>
-      <div id="organize-messages" class="organize-messages"></div>
+      <div id="folder-diagram-tree" class="folder-diagram-tree"></div>
     </section>
     <div id="bulk-actions" class="bulk-actions hidden">
       <span id="selected-count">0 selected</span>
       <button id="delete-selected-btn" type="button" class="btn-danger">Delete selected</button>
     </div>
-    <div id="results"></div>
-    <section id="editor" class="hidden">
-      <div class="editor-meta">
-        <span id="editor-date"></span>
-        <div class="editor-actions">
-          <button id="copy-note-btn" type="button">Copy</button>
-          <button id="close-editor-btn" type="button" title="Close note panel" aria-label="Close note panel">×</button>
+    <div class="search-content">
+      <div id="results"></div>
+      <section id="editor" class="hidden">
+        <div class="editor-meta">
+          <span id="editor-date"></span>
+          <div class="editor-actions">
+            <button id="copy-note-btn" type="button">Copy</button>
+            <button id="close-editor-btn" type="button" title="Close note panel" aria-label="Close note panel">×</button>
+          </div>
         </div>
-      </div>
-      <textarea id="editor-text"></textarea>
-      <div class="image-row">
-        <button id="attach-image-btn" type="button">Attach image</button>
-      </div>
-      <div class="file-row">
-        <button id="attach-file-btn" type="button">Attach file</button>
-      </div>
-      <div id="note-images"></div>
-      <div id="note-files"></div>
-      <div class="folder-row">
-        <label for="editor-folder-select">Folder</label>
-        <select id="editor-folder-select" aria-label="Note folder"></select>
-      </div>
-      <div class="link-row">
-        <input
-          id="app-select"
-          type="text"
-          placeholder="Link to app..."
-          aria-label="Link note to app"
-        />
-        <button id="link-btn" type="button">Link</button>
-      </div>
-      <div id="links"></div>
-    </section>
+        <textarea id="editor-text"></textarea>
+        <div class="image-row">
+          <button id="attach-image-btn" type="button">Attach image</button>
+        </div>
+        <div class="file-row">
+          <button id="attach-file-btn" type="button">Attach file</button>
+        </div>
+        <div id="note-images"></div>
+        <div id="note-files"></div>
+        <div class="folder-row">
+          <label for="editor-folder-select">Folder</label>
+          <select id="editor-folder-select" aria-label="Note folder"></select>
+        </div>
+        <div class="link-row">
+          <input
+            id="app-select"
+            type="text"
+            placeholder="Link to app..."
+            aria-label="Link note to app"
+          />
+          <button id="link-btn" type="button">Link</button>
+        </div>
+        <div id="links"></div>
+      </section>
+    </div>
   </main>
   <div id="image-lightbox" class="image-lightbox hidden" role="dialog" aria-modal="true" aria-label="Image preview">
     <button type="button" class="image-lightbox-close" aria-label="Close">×</button>
@@ -100,6 +90,19 @@
       <div class="modal-actions">
         <button type="button" id="api-key-cancel" class="modal-btn secondary">Cancel</button>
         <button type="button" id="api-key-save" class="modal-btn primary">Save</button>
+      </div>
+    </div>
+  </div>
+  <div id="chat-modal" class="chat-modal hidden" role="dialog" aria-modal="true" aria-label="Ask AI">
+    <div class="chat-dialog">
+      <div class="chat-header">
+        <span class="chat-title">Ask AI</span>
+        <button type="button" id="chat-close-btn" class="chat-close" aria-label="Close">×</button>
+      </div>
+      <div id="chat-messages" class="chat-messages"></div>
+      <div class="chat-input-row">
+        <textarea id="chat-input" class="chat-input" placeholder="It's 8pm, I have 4 hours free…" rows="2"></textarea>
+        <button type="button" id="chat-send-btn" class="chat-send-btn">Send</button>
       </div>
     </div>
   </div>

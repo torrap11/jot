@@ -419,6 +419,14 @@ function getNoteLinkMode() {
   return cachedNoteLinkMode;
 }
 
+// A03 — Injection: guard against interpolating unexpected values into SQL column names.
+const ALLOWED_LINK_COLS = Object.freeze({ app_key: 'app_key', bundle_id: 'bundle_id' });
+function safeLinkCol(mode) {
+  const col = ALLOWED_LINK_COLS[mode];
+  if (!col) throw new Error(`Unexpected note_app_links column: ${JSON.stringify(mode)}`);
+  return col;
+}
+
 function normalizeText(input) {
   return String(input || '').trim();
 }
@@ -462,6 +470,44 @@ function deleteNotes(ids) {
     return count;
   });
   return tx(normalized);
+}
+
+/**
+ * Removes rows that share the same text and created_at (same-second duplicates).
+ * Keeps the lowest id in each group. Typical cause: Enter key repeat or overlapping capture saves.
+ * @returns {{ removed: number, groups: number, imagePaths: string[], filePaths: string[] }}
+ */
+function deduplicateNotesByTextAndCreatedAt() {
+  const database = getDb();
+  const groups = database
+    .prepare(`
+      SELECT text, created_at, COUNT(*) AS c
+      FROM notes
+      GROUP BY text, created_at
+      HAVING c > 1
+    `)
+    .all();
+
+  const selectIds = database.prepare(
+    'SELECT id FROM notes WHERE text = ? AND created_at = ? ORDER BY id ASC',
+  );
+
+  const idsToDelete = [];
+  for (const g of groups) {
+    const rows = selectIds.all(g.text, g.created_at);
+    for (let i = 1; i < rows.length; i++) {
+      idsToDelete.push(rows[i].id);
+    }
+  }
+
+  if (idsToDelete.length === 0) {
+    return { removed: 0, groups: 0, imagePaths: [], filePaths: [] };
+  }
+
+  const imagePaths = getImagePathsForNotes(idsToDelete);
+  const filePaths = getFilePathsForNotes(idsToDelete);
+  const removed = deleteNotes(idsToDelete);
+  return { removed, groups: groups.length, imagePaths, filePaths };
 }
 
 function completeNote(id) {
@@ -598,6 +644,29 @@ function createFolder(name) {
   return getDb().prepare('SELECT id, name, created_at FROM folders WHERE id = ?').get(result.lastInsertRowid);
 }
 
+/**
+ * Removes a folder and moves any notes in it to Unfiled (same semantics as setNoteFolder(..., 'unfiled')).
+ * @param {string|number} folderId
+ * @returns {boolean}
+ */
+function deleteFolder(folderId) {
+  const parsed = parseFolderFilter(folderId);
+  if (parsed.mode !== 'folder') return false;
+  const fid = parsed.id;
+  const folder = getDb().prepare('SELECT id FROM folders WHERE id = ?').get(fid);
+  if (!folder) return false;
+
+  const txn = getDb().transaction(() => {
+    const rows = getDb().prepare('SELECT id FROM notes WHERE folder_id = ?').all(fid);
+    for (const row of rows) {
+      setNoteFolder(row.id, 'unfiled');
+    }
+    getDb().prepare('DELETE FROM folders WHERE id = ?').run(fid);
+  });
+  txn();
+  return true;
+}
+
 function setNoteFolder(noteId, folderId) {
   const nid = Number(noteId);
   if (!Number.isFinite(nid) || nid < 1) return null;
@@ -664,7 +733,7 @@ function getNoteOnlyLinksForNote(noteId) {
       .filter(Boolean);
   }
   return getDb()
-    .prepare(`SELECT ${mode} AS k FROM note_app_links WHERE note_id = ? ORDER BY k ASC`)
+    .prepare(`SELECT ${safeLinkCol(mode)} AS k FROM note_app_links WHERE note_id = ? ORDER BY k ASC`)
     .all(noteId)
     .map((row) => row.k)
     .filter(Boolean);
@@ -698,7 +767,7 @@ function linkNoteToApp(noteId, appKey) {
       .run(noteId, appKey, appKey);
   } else {
     getDb()
-      .prepare(`INSERT OR IGNORE INTO note_app_links (note_id, ${mode}) VALUES (?, ?)`)
+      .prepare(`INSERT OR IGNORE INTO note_app_links (note_id, ${safeLinkCol(mode)}) VALUES (?, ?)`)
       .run(noteId, appKey);
   }
 }
@@ -721,7 +790,7 @@ function unlinkNoteFromApp(noteId, appKey) {
       .run(noteId, appKey, appKey);
   } else {
     getDb()
-      .prepare(`DELETE FROM note_app_links WHERE note_id = ? AND ${mode} = ?`)
+      .prepare(`DELETE FROM note_app_links WHERE note_id = ? AND ${safeLinkCol(mode)} = ?`)
       .run(noteId, appKey);
   }
 }
@@ -738,6 +807,16 @@ function listNoteImages(noteId) {
   return getDb()
     .prepare('SELECT id, note_id, image_path, created_at FROM note_images WHERE note_id = ? ORDER BY id ASC')
     .all(noteId);
+}
+
+function getNoteImageById(imageId) {
+  const id = Number(imageId);
+  if (!Number.isFinite(id) || id < 1) return null;
+  return (
+    getDb()
+      .prepare('SELECT id, note_id, image_path, created_at FROM note_images WHERE id = ?')
+      .get(id) || null
+  );
 }
 
 function addNoteImage(noteId, imagePath) {
@@ -1084,6 +1163,7 @@ module.exports = {
   updateNote,
   deleteNote,
   deleteNotes,
+  deduplicateNotesByTextAndCreatedAt,
   completeNote,
   getNote,
   listRecent,
@@ -1092,11 +1172,13 @@ module.exports = {
   pruneEmptyFolders,
   getFolderDiagram,
   createFolder,
+  deleteFolder,
   setNoteFolder,
   linkNoteToApp,
   unlinkNoteFromApp,
   getLinksForNote,
   listNoteImages,
+  getNoteImageById,
   addNoteImage,
   removeNoteImage,
   getImagePathsForNote,

@@ -10,6 +10,12 @@
 <body class="capture-body">
   <main class="capture-shell">
     <textarea id="capture-input" placeholder="Type note and press Enter..." autofocus></textarea>
+    <div class="capture-folder-row folder-row">
+      <label for="capture-folder-select">Folder</label>
+      <select id="capture-folder-select" aria-label="Save note into folder">
+        <option value="unfiled">Unfiled</option>
+      </select>
+    </div>
     <div class="capture-link-row">
       <input
         id="capture-app-input"
