@@ -6,6 +6,8 @@ Jot is a local-first proactive memory layer for macOS. It watches workflow conte
 
 **Shortcuts:** ⌘P (⌃P) opens search from anywhere. ⌘N opens capture from the main window.
 
+**Demo:** [Jot walkthrough on YouTube](https://www.youtube.com/watch?v=8iutF9J1JHI)
+
 ## Tech Stack
 
 - Electron
