@@ -27,6 +27,7 @@
       "noteAppScan.js",
       "knownApps.js",
       "remindWorkflowParser.js",
+      "noteCleanup.js",
       "aiOrganize.js",
       "renderer/**/*",
       "overlay/**/*",

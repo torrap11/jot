@@ -221,52 +221,9 @@ function applyOrganizePlan(database, plan) {
   return { applied, errors };
 }
 
-const NIGHT_CHAT_SYSTEM = `You are a personal assistant inside the user's notes app. You can see all their captured notes — ideas, projects, things to learn, tasks, goals.
-
-When they describe their current situation (time of day, energy level, how much free time they have), suggest 2–3 specific things from their notes they could realistically do right now. Be warm, direct, and brief.
-
-Keep replies to 3–5 sentences. Pick the most interesting or timely options — don't list everything. If they show interest in something, help them think it through or get started. If they just want to talk through their evening, engage naturally.
-
-The user's notes are in the system context as JSON.`;
-
-function buildNightChatSnapshot(database) {
-  const folders = database.listFolders();
-  const folderMap = Object.fromEntries(folders.map((f) => [f.id, f.name]));
-  return database.listRecent(120, 'all').map((n) => {
-    const text = String(n.text || '').split('\n')[0].slice(0, 180);
-    const folder = n.folder_id != null ? (folderMap[n.folder_id] || null) : null;
-    return folder ? { text, folder } : { text };
-  });
-}
-
-async function nightChat(database, { history, userMessage, userDataDir }) {
-  const { apiKey, model } = readAnthropicCredentials(userDataDir);
-  if (!apiKey) {
-    return { error: 'No API key set. Click "Set or update API key…" to add one.' };
-  }
-
-  const snapshot = JSON.stringify(buildNightChatSnapshot(database));
-  const system = `${NIGHT_CHAT_SYSTEM}\n\n--- user's notes (JSON) ---\n${snapshot}`;
-
-  const trimmedHistory = (history || [])
-    .filter((m) => m && (m.role === 'user' || m.role === 'assistant'))
-    .slice(-10)
-    .map((m) => ({ role: m.role, content: String(m.content || '') }));
-
-  const messages = [...trimmedHistory, { role: 'user', content: userMessage }];
-
-  try {
-    const reply = await callAnthropic({ apiKey, model, system, messages });
-    return { reply };
-  } catch (e) {
-    return { error: e.message || String(e) };
-  }
-}
-
 module.exports = {
   readAnthropicCredentials,
   buildOrganizeSnapshot,
   organizeChat,
   applyOrganizePlan,
-  nightChat,
 };

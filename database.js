@@ -573,6 +573,88 @@ function deduplicateNotesByTextAndCreatedAt() {
   return { removed, groups: groups.length, imagePaths, filePaths };
 }
 
+/** Same logical body ignoring case and whitespace runs (for duplicate detection). */
+function normalizeNoteBodyKey(text) {
+  return String(text || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Moves app links, participants, images, and files from absorb notes into keeper, then deletes absorb rows.
+ * @returns {{ ok: boolean, error?: string, absorbed?: number }}
+ */
+function mergeNotesIntoKeeper(keeperId, absorbIds, mergedText) {
+  const keeper = getNote(keeperId);
+  if (!keeper) return { ok: false, error: 'keeper note not found' };
+  const text = normalizeText(mergedText);
+  if (!text) return { ok: false, error: 'merged text is empty' };
+  const absorb = [...new Set(
+    (absorbIds || []).map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0 && x !== keeperId),
+  )];
+  if (absorb.length === 0) return { ok: false, error: 'no notes to absorb' };
+
+  const txn = getDb().transaction(() => {
+    for (const id of absorb) {
+      const row = getDb().prepare('SELECT id FROM notes WHERE id = ?').get(id);
+      if (!row) continue;
+      for (const k of getNoteOnlyLinksForNote(id)) {
+        linkNoteToApp(keeperId, k);
+      }
+      for (const p of listParticipantsForNote(id)) {
+        getDb()
+          .prepare('INSERT OR IGNORE INTO note_participants (note_id, participant) VALUES (?, ?)')
+          .run(keeperId, p);
+      }
+      getDb().prepare('UPDATE note_images SET note_id = ? WHERE note_id = ?').run(keeperId, id);
+      getDb().prepare('UPDATE note_files SET note_id = ? WHERE note_id = ?').run(keeperId, id);
+      getDb().prepare('DELETE FROM notes WHERE id = ?').run(id);
+    }
+    updateNote(keeperId, text);
+  });
+
+  try {
+    txn();
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  }
+  return { ok: true, absorbed: absorb.length };
+}
+
+/**
+ * Deletes notes that share the same normalized full body, keeping the lowest id.
+ * Re-links attachments and links onto the kept note before deleting duplicates.
+ * @returns {{ removed: number, groups: number, imagePaths: string[], filePaths: string[] }}
+ */
+function deduplicateNotesByNormalizedText() {
+  const rows = getDb().prepare('SELECT id, text FROM notes ORDER BY id ASC').all();
+  const groups = new Map();
+  for (const r of rows) {
+    const key = normalizeNoteBodyKey(r.text);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r.id);
+  }
+
+  let removed = 0;
+  let groupCount = 0;
+  for (const ids of groups.values()) {
+    if (ids.length < 2) continue;
+    groupCount += 1;
+    const sorted = [...ids].sort((a, b) => a - b);
+    const keeperId = sorted[0];
+    const absorb = sorted.slice(1);
+    const keeperRow = getDb().prepare('SELECT text FROM notes WHERE id = ?').get(keeperId);
+    const keeperText = keeperRow ? String(keeperRow.text) : '';
+    const merged = normalizeText(keeperText);
+    if (!merged) continue;
+    const result = mergeNotesIntoKeeper(keeperId, absorb, merged);
+    if (result.ok) removed += absorb.length;
+  }
+  return { removed, groups: groupCount, imagePaths: [], filePaths: [] };
+}
+
 function completeNote(id) {
   const nid = Number(id);
   if (!Number.isFinite(nid) || nid < 1) return false;
@@ -1215,6 +1297,8 @@ module.exports = {
   deleteNote,
   deleteNotes,
   deduplicateNotesByTextAndCreatedAt,
+  deduplicateNotesByNormalizedText,
+  mergeNotesIntoKeeper,
   completeNote,
   getNote,
   listRecent,

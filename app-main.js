@@ -30,6 +30,7 @@ const surface = require('./surfaceEngine');
 const { KNOWN_APPS, BUNDLE_ID_TO_NAME, resolveInputToBundleId } = require('./knownApps');
 const { parseRemindWorkflowText } = require('./remindWorkflowParser');
 const aiOrganize = require('./aiOrganize');
+const noteCleanup = require('./noteCleanup');
 
 const PRELOAD_MAIN = path.join(__dirname, 'preload.js');
 
@@ -599,6 +600,99 @@ async function importExistingDbFromMenu() {
   }
 }
 
+/**
+ * Deterministic dedupe + optional AI merge/reorganize. Notifies search UI when the DB changes.
+ * @param {boolean} useAi
+ */
+async function executeNotesCleanup(useAi) {
+  const local = noteCleanup.runLocalCleanup(db);
+  void cleanupImagePaths([...(local.exactDupes?.imagePaths || []), ...(local.exactDupes?.filePaths || [])]);
+
+  let ai = null;
+  let apply = null;
+
+  const localChanged =
+    (local.exactDupes && local.exactDupes.removed > 0) ||
+    (local.normalizedDupes && local.normalizedDupes.removed > 0) ||
+    (local.prunedFolders && local.prunedFolders > 0);
+
+  if (useAi) {
+    try {
+      ai = await noteCleanup.cleanupChat(db, { userDataDir: app.getPath('userData') });
+    } catch (e) {
+      ai = { error: e.message || String(e) };
+    }
+    if (ai && !ai.error && Array.isArray(ai.plan) && ai.plan.length > 0) {
+      apply = noteCleanup.applyCleanupPlan(db, ai.plan);
+      void cleanupImagePaths([...(apply.imagePaths || []), ...(apply.filePaths || [])]);
+    }
+  }
+
+  const extraPruned = db.pruneEmptyFolders();
+  const aiChanged = apply && apply.applied && apply.applied.length > 0;
+
+  if (localChanged || aiChanged || extraPruned > 0) {
+    notifySearchNotesChanged();
+  }
+
+  const summary = formatCleanupSummary({ local, ai, apply, extraPruned });
+  return { local, ai, apply, extraPruned, summary };
+}
+
+function formatCleanupSummary(res) {
+  const parts = [];
+  const ex = res.local?.exactDupes?.removed || 0;
+  const nm = res.local?.normalizedDupes?.removed || 0;
+  if (ex) parts.push(`Removed ${ex} duplicate(s) with the same text and timestamp.`);
+  if (nm) parts.push(`Merged ${nm} duplicate(s) with the same wording (ignoring spacing and letter case).`);
+  if (!ex && !nm) parts.push('No exact-text duplicates found.');
+  if (res.ai && res.ai.error) {
+    parts.push(`AI cleanup: ${res.ai.error}`);
+  } else if (res.apply && res.apply.applied && res.apply.applied.length > 0) {
+    parts.push(`AI applied ${res.apply.applied.length} change(s).`);
+    if (res.ai && res.ai.reply) parts.push(String(res.ai.reply));
+  } else if (res.ai && res.ai.reply) {
+    parts.push(String(res.ai.reply));
+  }
+  if (res.apply && res.apply.errors && res.apply.errors.length) {
+    parts.push(`Warnings: ${res.apply.errors.join('; ')}`);
+  }
+  if (res.extraPruned > 0) {
+    parts.push(`Removed ${res.extraPruned} empty folder(s).`);
+  }
+  return parts.join('\n');
+}
+
+async function cleanupNotesFromMenu() {
+  const parentWindow = searchWin || captureWin || null;
+  const confirm = await dialog.showMessageBox(parentWindow || undefined, {
+    type: 'question',
+    title: 'Clean DB',
+    message: 'Run Clean DB?',
+    detail:
+      'This removes duplicate notes (same text, including copies that only differ by spacing or capital letters). If an Anthropic API key is set, AI will also try to merge overlapping ideas and tidy folders — skipped when no key.',
+    buttons: ['Cancel', 'Clean DB'],
+    defaultId: 1,
+    cancelId: 0,
+  });
+  if (confirm.response !== 1) return;
+  try {
+    const res = await executeNotesCleanup(true);
+    await dialog.showMessageBox(parentWindow || undefined, {
+      type: 'info',
+      title: 'Clean DB finished',
+      message: 'Clean DB finished.',
+      detail: res.summary,
+    });
+  } catch (error) {
+    await dialog.showMessageBox(parentWindow || undefined, {
+      type: 'error',
+      title: 'Clean DB failed',
+      message: error && error.message ? error.message : String(error),
+    });
+  }
+}
+
 async function dedupeNotesFromMenu() {
   const parentWindow = searchWin || captureWin || null;
   try {
@@ -719,6 +813,13 @@ function buildAppMenu() {
           label: 'Remove Duplicate Notes…',
           click: () => {
             void dedupeNotesFromMenu();
+          },
+        },
+        {
+          label: 'Clean DB…',
+          click: () => {
+            showSearchWindow();
+            void cleanupNotesFromMenu();
           },
         },
         {
@@ -1055,25 +1156,20 @@ function registerIpc() {
       return { error: e.message || String(e) };
     }
   });
-  ipcMain.handle('ai:night-chat', async (_event, payload) => {
-    const userMessage = String((payload && payload.userMessage) || '').trim();
-    if (!userMessage) return { error: 'Empty message' };
-    const history = Array.isArray(payload && payload.history) ? payload.history : [];
-    try {
-      return await aiOrganize.nightChat(db, {
-        history,
-        userMessage,
-        userDataDir: app.getPath('userData'),
-      });
-    } catch (e) {
-      return { error: e.message || String(e) };
-    }
-  });
   ipcMain.handle('ai:organize-apply', (_event, plan) => {
     const result = aiOrganize.applyOrganizePlan(db, plan);
     const prunedFolders = db.pruneEmptyFolders();
     if (result.applied.length > 0 || prunedFolders > 0) notifySearchNotesChanged();
     return { ...result, prunedFolders };
+  });
+
+  ipcMain.handle('notes:cleanup', async (_event, payload) => {
+    const useAi = !payload || payload.useAi !== false;
+    try {
+      return await executeNotesCleanup(useAi);
+    } catch (e) {
+      return { error: e.message || String(e) };
+    }
   });
 
   ipcMain.on('window:hide-capture', hideCaptureWindow);

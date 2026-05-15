@@ -14,6 +14,8 @@ const state = {
 };
 
 const queryInput = document.getElementById('query');
+const cleanupNotesBtn = document.getElementById('cleanup-notes-btn');
+const cleanupStatusEl = document.getElementById('cleanup-status');
 const importDbBtn = document.getElementById('import-db-btn');
 const exportDbBtn = document.getElementById('export-db-btn');
 const aiKeyAccessStatusEl = document.getElementById('ai-key-access-status');
@@ -740,6 +742,45 @@ async function removeSelectedNotes() {
   }
 }
 
+let cleanupStatusTimer = null;
+
+function showCleanupStatus(text) {
+  if (!cleanupStatusEl) return;
+  cleanupStatusEl.textContent = text;
+  cleanupStatusEl.classList.remove('cleanup-status--hidden');
+  clearTimeout(cleanupStatusTimer);
+  cleanupStatusTimer = setTimeout(() => {
+    cleanupStatusEl.classList.add('cleanup-status--hidden');
+    cleanupStatusEl.textContent = '';
+  }, 16000);
+}
+
+cleanupNotesBtn?.addEventListener('click', async () => {
+  const ok = confirm(
+    'Run Clean DB?\n\n• Removes duplicate saves (same text and timestamp).\n• Merges notes whose text only differs by spacing or capital letters.\n• If an Anthropic API key is set, AI may merge overlapping ideas and tidy folders.',
+  );
+  if (!ok) return;
+  cleanupNotesBtn.disabled = true;
+  showCleanupStatus('Running Clean DB…');
+  try {
+    const res = await window.mvp.runNotesCleanup({ useAi: true });
+    if (res.error) {
+      showCleanupStatus(`Clean DB failed: ${res.error}`);
+      return;
+    }
+    showCleanupStatus(res.summary || 'Clean DB finished.');
+    if (state.activeId) {
+      const note = await window.mvp.getNote(state.activeId);
+      if (!note) closeEditor();
+    }
+    await runQuery(queryInput.value.trim());
+  } catch (e) {
+    showCleanupStatus(`Clean DB failed: ${e.message || String(e)}`);
+  } finally {
+    cleanupNotesBtn.disabled = false;
+  }
+});
+
 queryInput.addEventListener('input', () => {
   runQuery(queryInput.value.trim());
 });
@@ -1199,12 +1240,6 @@ document.addEventListener('keydown', (event) => {
       closeImageLightbox();
       return;
     }
-    const chatModalEl = document.getElementById('chat-modal');
-    if (chatModalEl && !chatModalEl.classList.contains('hidden')) {
-      event.preventDefault();
-      closeChat();
-      return;
-    }
     if (state.activeId != null && editorEl && !editorEl.classList.contains('hidden')) {
       event.preventDefault();
       closeEditor();
@@ -1269,102 +1304,6 @@ window.mvp.onNotesChanged(() => {
 
 window.mvp.onOpenAiKeyModal(() => {
   showApiKeyModal();
-});
-
-// --- AI Chat ---
-
-const chatModal = document.getElementById('chat-modal');
-const chatMessagesEl = document.getElementById('chat-messages');
-const chatInputEl = document.getElementById('chat-input');
-const chatSendBtn = document.getElementById('chat-send-btn');
-const chatCloseBtn = document.getElementById('chat-close-btn');
-const aiChatBtn = document.getElementById('ai-chat-btn');
-
-let chatHistory = [];
-let chatBusy = false;
-
-function openChat() {
-  chatModal.classList.remove('hidden');
-  requestAnimationFrame(() => chatInputEl.focus());
-}
-
-function closeChat() {
-  chatModal.classList.add('hidden');
-}
-
-function appendChatMsg(role, text) {
-  const el = document.createElement('div');
-  el.className = `chat-msg ${role}`;
-  el.textContent = text;
-  chatMessagesEl.appendChild(el);
-  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
-  return el;
-}
-
-async function sendChatMessage() {
-  const text = chatInputEl.value.trim();
-  if (!text || chatBusy) return;
-
-  chatBusy = true;
-  chatSendBtn.disabled = true;
-  chatInputEl.value = '';
-
-  appendChatMsg('user', text);
-  const thinking = appendChatMsg('thinking', 'Thinking…');
-
-  const result = await window.mvp.nightChat({ userMessage: text, history: chatHistory });
-
-  thinking.remove();
-  chatBusy = false;
-  chatSendBtn.disabled = false;
-
-  if (result.error) {
-    appendChatMsg('error', result.error);
-  } else {
-    appendChatMsg('ai', result.reply);
-    chatHistory.push({ role: 'user', content: text });
-    chatHistory.push({ role: 'assistant', content: result.reply });
-  }
-
-  chatInputEl.focus();
-}
-
-aiChatBtn?.addEventListener('click', openChat);
-
-chatCloseBtn?.addEventListener('click', closeChat);
-
-chatModal?.addEventListener('click', (e) => {
-  if (e.target === chatModal) closeChat();
-});
-
-chatSendBtn?.addEventListener('click', () => void sendChatMessage());
-
-chatInputEl?.addEventListener('keydown', (e) => {
-  if (e.key === 'Tab') {
-    const hint = chatInputEl.getAttribute('placeholder') ?? '';
-    const value = chatInputEl.value;
-    if (
-      hint &&
-      value.length < hint.length &&
-      hint.startsWith(value)
-    ) {
-      e.preventDefault();
-      chatInputEl.value = hint;
-      const end = hint.length;
-      chatInputEl.setSelectionRange(end, end);
-    }
-    return;
-  }
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    void sendChatMessage();
-    return;
-  }
-  if (e.key === 'Escape') {
-    e.preventDefault();
-    e.stopPropagation();
-    closeChat();
-  }
 });
 
 async function init() {

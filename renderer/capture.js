@@ -93,7 +93,7 @@ async function attachPendingToNote(noteId) {
   pendingFileAttachments = [];
 }
 
-/** Ask AI to pick a folder for this note only; ignores other moveNote steps in the response. */
+/** Use AI to pick a folder for this note only; ignores other moveNote steps in the response. */
 async function fileNoteWithAi(noteId) {
   const id = Number(noteId);
   if (!Number.isFinite(id) || id < 1) return;

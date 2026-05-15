@@ -11,7 +11,11 @@
   <main class="search-shell">
     <div class="search-toolbar">
       <input id="query" type="search" placeholder="Search notes..." autofocus />
+      <button type="button" id="cleanup-notes-btn" title="Deduplicate notes and optionally run AI merge (with API key)">
+        Clean DB
+      </button>
     </div>
+    <p id="cleanup-status" class="cleanup-status cleanup-status--hidden" role="status" aria-live="polite"></p>
     <section id="folder-diagram" class="folder-diagram" aria-label="Folder structure diagram">
       <div class="folder-diagram-header">
         <span class="folder-diagram-title">Folder structure diagram</span>
@@ -105,19 +109,6 @@
       <div class="modal-actions">
         <button type="button" id="new-folder-cancel" class="modal-btn secondary">Cancel</button>
         <button type="button" id="new-folder-create" class="modal-btn primary">Create</button>
-      </div>
-    </div>
-  </div>
-  <div id="chat-modal" class="chat-modal hidden" role="dialog" aria-modal="true" aria-label="Ask AI">
-    <div class="chat-dialog">
-      <div class="chat-header">
-        <span class="chat-title">Ask AI</span>
-        <button type="button" id="chat-close-btn" class="chat-close" aria-label="Close">×</button>
-      </div>
-      <div id="chat-messages" class="chat-messages"></div>
-      <div class="chat-input-row">
-        <textarea id="chat-input" class="chat-input" placeholder="It's 8pm, I have 4 hours free…" rows="2"></textarea>
-        <button type="button" id="chat-send-btn" class="chat-send-btn">Send</button>
       </div>
     </div>
   </div>
