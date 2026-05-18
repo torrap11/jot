@@ -1,0 +1,16 @@
+---
+description: Keep agent replies to 5–10 lines unless the user asks for more
+alwaysApply: true
+---
+
+# Response length (mandatory)
+
+Default to **5–10 lines** of prose for every reply (explanations, summaries, Q&A).
+
+- Do not exceed 10 prose lines unless the user explicitly says: "long answer", "detailed", or "expand".
+- Fenced code blocks, commands, diffs, and file paths do **not** count toward the line limit.
+- No preamble ("Sure!", "Great question!"). Start with the answer.
+- Use bullets only when listing 3+ items; max 5 bullets (each bullet counts as one line).
+- If the topic needs more detail: give the short answer first, then end with: "Want the full breakdown?"
+
+Long-form formats (PR bodies, commit messages, audits, step-by-step implementation plans) override this limit only when the user asks for that format by name.
