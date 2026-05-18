@@ -1,7 +1,7 @@
 .DS_Store
 .env
 
-# Personal Cursor rules — live in private parthha12/dev-rules (symlinked locally)
+# Personal Cursor rules — live in private parthha12/dev-rules (global via ~/.cursor/rules)
 .cursor/
 node_modules/
 target/
