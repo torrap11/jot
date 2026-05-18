@@ -1,5 +1,8 @@
 .DS_Store
 .env
+
+# Local-only Cursor rules (account defaults, not for public repo)
+.cursor/rules/github-parthha12.mdc
 node_modules/
 target/
 dist/
