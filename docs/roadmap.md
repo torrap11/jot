@@ -1,21 +1,31 @@
 # Roadmap
 
-## Phase 1 — Policy + fast local retrieval
+Phases are ordered by the five factors: **right memory → right moment → fast enough → often silent → user in control**.
 
-- Context snapshot (app, time window, transitions)
-- Screenpipe `/search` with tight filters
-- `evaluate → surface | silence` with logging only
+## Phase 1 — Right memory + fast enough
 
-## Phase 2 — Intervention
+- Screenpipe `/search` with app + time filters
+- Context snapshot on app switch
+- Log `evaluate → surface | silence` (no UI yet)
+- Benchmark retrieval latency on hot path
 
-- Overlay / notification UX spec
-- Dismiss, snooze, cooldown persistence
+## Phase 2 — Right moment + often silent
 
-## Phase 3 — Live conversation
+- Triggers: app switch, return-after-interrupt, calendar (meeting soon)
+- Confidence thresholds, cooldown, default silence
+- Policy crate / module wired to retrieval scores
 
-- Streaming STT trigger (strict opt-in)
+## Phase 3 — User in control
+
+- Overlay / notification spec
+- Dismiss, snooze, per-app blocklist
+- "Why now" copy on every surface
+
+## Phase 4 — Right moment (live)
+
+- Streaming STT + conversation cues (strict opt-in)
 - Entity linking (person ↔ pronoun)
 
-## Phase 4 — Agent-native
+## Phase 5 — Agent-native
 
-- MCP tools: `evaluate_recall`, `explain_last_recall`
+- MCP: `evaluate_recall`, `explain_last_recall`

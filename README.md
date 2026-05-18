@@ -1,27 +1,33 @@
 # Proactive Recall
 
-**Remembering = resurfacing the right memory for what you're doing now.**
+**Proactive recall = right memory × right moment × fast enough × often silent × user still in control.**
+
+Remembering, for a system, is **resurfacing** the right past context for **what you are doing now**—not storing more data.
 
 ```
 right memory = g(what's happening now, what was captured before, how sure we are, whether interrupting is allowed)
 ```
 
+The five factors above are how that function has to **feel** in product: correct retrieval, correct timing, sub-second hot path, default silence, explicit user agency.
+
 ## What it is
 
-**Proactive recall** is an interaction model: the system surfaces relevant past context **before** you search—based on present situation, episodic data, confidence, and permission to interrupt.
+**Proactive recall** is an interaction model: surface relevant past context **before** you search. Reactive recall waits for you to ask; proactive recall infers **now**.
 
 | | Reactive | Proactive |
 |---|----------|-----------|
 | Trigger | User asks | System infers "now" |
 | Failure | Empty results | Wrong interrupt / noise |
 
-## Requirements
+## The five factors
 
-1. **Fast retrieval** — local index, sub-second hot path; no LLM in the critical path
-2. **Episodic data** — capture must exist and be searchable
-3. **Accurate context** — app, conversation, entities (who is "she"?)
-4. **Strict policy** — threshold, cooldown, default silence
-5. **Respectful UI** — small overlay, dismiss/snooze, local-first, clear permissions
+| Factor | Meaning |
+|--------|---------|
+| **Right memory** | Correct episode or note; entities resolved ("Drima" ↔ "she") |
+| **Right moment** | Context matches—app switch, meeting soon, conversation cue |
+| **Fast enough** | Local index, narrow query, prefetch; no LLM on the hot path |
+| **Often silent** | Low confidence → no card; cooldown; wrong interrupt is failure |
+| **User in control** | Dismiss, snooze, blocklist, explain "why now", local-first |
 
 ## Docs
 
@@ -31,7 +37,7 @@ right memory = g(what's happening now, what was captured before, how sure we are
 
 ## Related
 
-Built to integrate with [screenpipe](https://github.com/screenpipe/screenpipe) (episodic world model) + a recall policy layer.
+Integrates with [screenpipe](https://github.com/screenpipe/screenpipe) (episodic world model) + a recall policy layer.
 
 ## License
 
