@@ -1,0 +1,11 @@
+{
+  "tailwindCSS.experimental.configFile": "apps/screenpipe-app-tauri/tailwind.config.ts",
+  "tailwindCSS.rootFontSize": 16,
+  "eslint.workingDirectories": [
+    {
+      "directory": "apps/screenpipe-app-tauri",
+      "changeProcessCWD": true
+    }
+  ],
+  "typescript.tsdk": "apps/screenpipe-app-tauri/node_modules/typescript/lib"
+}
