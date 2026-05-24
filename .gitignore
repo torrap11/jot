@@ -50,3 +50,6 @@ yarn-error.log*
 
 # npm pack
 *.tgz
+
+# Local exports / chat logs
+conversation-export-*.md

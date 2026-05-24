@@ -78,3 +78,70 @@ test('pickSurfacedNotes: empty when app cannot be resolved', () => {
   assert.equal(out.appKey, '');
   assert.equal(out.notes.length, 0);
 });
+
+// ── Activity tags (whyNow) ────────────────────────────────────────────────────
+
+test('pickSurfacedNotes: linked note gets same_app whyNow tag', () => {
+  const note = { id: 10, text: 'spotify note', created_at: '2026-01-01' };
+  const db = mockDb({ getNotesLinkedToApp: () => [note] });
+  const { notes } = pickSurfacedNotes({
+    bundleId: 'com.spotify.client',
+    appName: 'Spotify',
+    db,
+    catalog: KNOWN_APPS,
+    limit: 3,
+  });
+  assert.ok(notes.length > 0);
+  assert.ok(Array.isArray(notes[0].whyNow), 'whyNow should be an array');
+  assert.ok(notes[0].whyNow.includes('same_app'), 'linked note should have same_app tag');
+});
+
+test('pickSurfacedNotes: keyword-matched note gets keyword_match whyNow tag', () => {
+  const note = { id: 11, text: 'slack meeting notes', created_at: '2026-01-01' };
+  const db = mockDb({
+    getNotesLinkedToApp: () => [],
+    getKeywordCandidates: () => [note],
+  });
+  const { notes } = pickSurfacedNotes({
+    bundleId: 'com.tinyspeck.slackmacgap',
+    appName: 'Slack',
+    db,
+    catalog: KNOWN_APPS,
+    limit: 3,
+  });
+  assert.ok(notes.length > 0);
+  assert.ok(notes[0].whyNow.includes('keyword_match'), 'keyword match should have keyword_match tag');
+});
+
+test('pickSurfacedNotes: recent note also gets recency whyNow tag', () => {
+  const recentDate = new Date(Date.now() - 60_000).toISOString(); // 1 min ago
+  const note = { id: 12, text: 'fresh note', created_at: recentDate };
+  const db = mockDb({ getNotesLinkedToApp: () => [note] });
+  const { notes } = pickSurfacedNotes({
+    bundleId: 'com.spotify.client',
+    appName: 'Spotify',
+    db,
+    catalog: KNOWN_APPS,
+    limit: 3,
+  });
+  assert.ok(notes.length > 0);
+  assert.ok(notes[0].whyNow.includes('recency'), 'very recent note should have recency tag');
+});
+
+test('pickSurfacedNotes: transition bonus fires when note linked to recent app', () => {
+  const note = { id: 13, text: 'cross-app note', created_at: '2026-01-01' };
+  const db = mockDb({
+    getNotesLinkedToApp: () => [note],
+    getLinksForNote: () => ['com.prev.app'],
+  });
+  const { notes } = pickSurfacedNotes({
+    bundleId: 'com.spotify.client',
+    appName: 'Spotify',
+    db,
+    catalog: KNOWN_APPS,
+    limit: 3,
+    recentTransitions: ['com.prev.app'],
+  });
+  assert.ok(notes.length > 0);
+  assert.ok(notes[0].whyNow.includes('recent_transition'), 'should have recent_transition tag when linked to recently visited app');
+});

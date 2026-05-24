@@ -118,4 +118,10 @@ function stopWatcher() {
 /** Reset the cached signature so the next poll re-fires (e.g. after settings change). */
 function resetSignature() { lastSignature = ''; }
 
-module.exports = { startWatcher, stopWatcher, resetSignature, getRecentTransitions };
+module.exports = {
+  startWatcher,
+  stopWatcher,
+  resetSignature,
+  getRecentTransitions,
+  getFrontmostProcess,
+};

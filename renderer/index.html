@@ -4,65 +4,172 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: jot-image:" />
-  <title>Jot</title>
+  <title>PakrAI</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body class="search-body">
   <main class="search-shell">
-    <div class="search-toolbar jot-window-drag">
-      <input id="query" type="search" placeholder="Search notes..." autofocus />
-      <button type="button" id="cleanup-notes-btn" title="Deduplicate notes and optionally run AI merge (with API key)">
-        Clean DB
+
+    <!-- Title bar: drag region + main tabs + engine status -->
+    <div class="tab-bar jot-window-drag" aria-label="Window chrome">
+      <div class="search-chrome-spacer" aria-hidden="true"></div>
+      <nav class="tabs" role="tablist" aria-label="Main navigation">
+        <button class="tab active" id="tab-notes" data-tab="notes" type="button" role="tab" aria-selected="true" aria-controls="notes-panel">Notes</button>
+        <button class="tab" id="tab-recordings" data-tab="recordings" type="button" role="tab" aria-selected="false" aria-controls="recordings-panel">Recordings</button>
+        <button class="tab" id="tab-pakr" data-tab="pakr" type="button" role="tab" aria-selected="false" aria-controls="pakr-panel">Pakr</button>
+      </nav>
+      <button type="button" class="engine-status" id="engine-toggle" title="Click to turn screen recording on or off">
+        <span class="engine-dot" id="engine-dot" aria-hidden="true"></span>
+        <span class="engine-label" id="engine-label">offline</span>
       </button>
     </div>
-    <p id="cleanup-status" class="cleanup-status cleanup-status--hidden" role="status" aria-live="polite"></p>
-    <section id="folder-diagram" class="folder-diagram" aria-label="Folder structure diagram">
-      <div class="folder-diagram-header">
-        <span class="folder-diagram-title">Folder structure diagram</span>
-        <button type="button" id="new-folder-btn">New folder</button>
+
+    <!-- Notes panel (existing) -->
+    <div id="notes-panel" class="tab-panel" role="tabpanel" aria-labelledby="">
+      <div class="search-toolbar">
+        <input id="query" type="search" placeholder="Search notes, screen, and audio…" autofocus />
+        <button type="button" id="cleanup-notes-btn" title="Deduplicate notes and optionally run AI merge (with API key)">
+          Clean DB
+        </button>
       </div>
-      <div id="folder-diagram-tree" class="folder-diagram-tree"></div>
-    </section>
-    <div id="bulk-actions" class="bulk-actions hidden">
-      <span id="selected-count">0 selected</span>
-      <button id="delete-selected-btn" type="button" class="btn-danger">Delete selected</button>
-    </div>
-    <div class="search-content">
-      <div id="results"></div>
-      <section id="editor" class="hidden">
-        <div class="editor-meta">
-          <span id="editor-date"></span>
-          <div class="editor-actions">
-            <button id="copy-note-btn" type="button">Copy</button>
-            <button id="close-editor-btn" type="button" title="Close note panel" aria-label="Close note panel">×</button>
-          </div>
+      <div class="content-type-chips unified-search-chips" id="unified-type-chips" role="group" aria-label="Search scope">
+        <button class="chip active" data-scope="all" type="button">All</button>
+        <button class="chip" data-scope="notes" type="button">Notes</button>
+        <button class="chip" data-scope="screen" type="button">Screen</button>
+        <button class="chip" data-scope="audio" type="button">Audio</button>
+      </div>
+      <p id="unified-search-status" class="panel-status unified-search-status hidden" aria-live="polite"></p>
+      <div id="unified-capture-results" class="capture-results unified-capture-results hidden" role="list"></div>
+      <p id="cleanup-status" class="cleanup-status cleanup-status--hidden" role="status" aria-live="polite"></p>
+      <section id="folder-diagram" class="folder-diagram" aria-label="Folder structure diagram">
+        <div class="folder-diagram-header">
+          <span class="folder-diagram-title">Folder structure diagram</span>
+          <button type="button" id="new-folder-btn">New folder</button>
         </div>
-        <textarea id="editor-text"></textarea>
-        <div class="image-row">
-          <button id="attach-image-btn" type="button">Attach image</button>
-        </div>
-        <div class="file-row">
-          <button id="attach-file-btn" type="button">Attach file</button>
-        </div>
-        <div id="note-images"></div>
-        <div id="note-files"></div>
-        <div class="folder-row">
-          <label for="editor-folder-select">Folder</label>
-          <select id="editor-folder-select" aria-label="Note folder"></select>
-          <button type="button" id="editor-new-folder-btn" class="editor-new-folder-btn" title="Create new folder and move this note">+</button>
-        </div>
-        <div class="link-row">
-          <input
-            id="app-select"
-            type="text"
-            placeholder="Link to app..."
-            aria-label="Link note to app"
-          />
-          <button id="link-btn" type="button">Link</button>
-        </div>
-        <div id="links"></div>
+        <div id="folder-diagram-tree" class="folder-diagram-tree"></div>
       </section>
+      <div id="bulk-actions" class="bulk-actions hidden">
+        <span id="selected-count">0 selected</span>
+        <button id="delete-selected-btn" type="button" class="btn-danger">Delete selected</button>
+      </div>
+      <div class="search-content">
+        <div id="results"></div>
+        <section id="editor" class="hidden">
+          <div class="editor-meta">
+            <span id="editor-date"></span>
+            <div class="editor-actions">
+              <button id="copy-note-btn" type="button">Copy</button>
+              <button id="close-editor-btn" type="button" title="Close note panel" aria-label="Close note panel">×</button>
+            </div>
+          </div>
+          <textarea id="editor-text"></textarea>
+          <div class="organize-hint-row">
+            <label for="editor-organize-hint">Organization instructions</label>
+            <textarea
+              id="editor-organize-hint"
+              rows="2"
+              placeholder="e.g. add to folders about The Vegetable and Research projects"
+            ></textarea>
+            <div class="organize-hint-actions">
+              <button type="button" id="editor-organize-btn">Organize note</button>
+            </div>
+            <p id="editor-organize-status" class="organize-status" aria-live="polite"></p>
+          </div>
+          <div class="image-row">
+            <button id="attach-image-btn" type="button">Attach image</button>
+          </div>
+          <div class="file-row">
+            <button id="attach-file-btn" type="button">Attach file</button>
+          </div>
+          <div id="note-images"></div>
+          <div id="note-files"></div>
+          <div class="folder-row">
+            <label for="editor-folder-select">Folder</label>
+            <select id="editor-folder-select" aria-label="Note folder"></select>
+            <button type="button" id="editor-new-folder-btn" class="editor-new-folder-btn" title="Create new folder and move this note">+</button>
+          </div>
+          <div class="link-row">
+            <input
+              id="app-select"
+              type="text"
+              placeholder="Link to app..."
+              aria-label="Link note to app"
+            />
+            <button id="link-btn" type="button">Link</button>
+          </div>
+          <div id="links"></div>
+        </section>
+      </div>
     </div>
+
+    <!-- Recordings panel — search + ask over captured screen history -->
+    <div id="recordings-panel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-recordings">
+
+      <!-- Mode toggle: Search / Ask -->
+      <div class="recordings-modes" role="group" aria-label="Recordings mode">
+        <button class="rec-mode-btn active" id="rec-mode-search" data-mode="search" type="button">Search</button>
+        <button class="rec-mode-btn" id="rec-mode-ask" data-mode="ask" type="button">Ask</button>
+      </div>
+
+      <!-- Search pane -->
+      <div id="rec-search-pane" class="rec-pane">
+        <div class="rewind-toolbar">
+          <input id="rec-query" type="search" placeholder="Search screen history…" />
+          <input id="rec-app-filter" type="text" class="rec-app-filter" placeholder="App…" title="Filter by app name" aria-label="App name filter" />
+          <select id="rec-time-range" aria-label="Time range">
+            <option value="2h ago">Last 2h</option>
+            <option value="24h ago">Last 24h</option>
+            <option value="7d ago">Last 7 days</option>
+            <option value="30d ago">Last 30 days</option>
+          </select>
+          <button id="rec-search-btn" type="button">Search</button>
+        </div>
+        <div class="content-type-chips" id="rec-type-chips" role="group" aria-label="Content type">
+          <button class="chip active" data-type="all" type="button">All</button>
+          <button class="chip" data-type="accessibility" type="button">Screen</button>
+          <button class="chip" data-type="audio" type="button">Audio</button>
+        </div>
+        <p id="rec-search-status" class="panel-status" aria-live="polite"></p>
+        <div id="rec-search-results" class="capture-results" role="list"></div>
+      </div>
+
+      <!-- Ask pane -->
+      <div id="rec-ask-pane" class="rec-pane hidden">
+        <div class="ask-toolbar">
+          <input id="rec-ask-query" type="text" placeholder="What were you working on?" />
+          <button id="rec-ask-btn" type="button">Ask</button>
+        </div>
+        <p id="rec-ask-status" class="panel-status" aria-live="polite"></p>
+        <div id="rec-ask-results" class="capture-results" role="list"></div>
+      </div>
+
+      <!-- Offline empty state -->
+      <div id="rec-offline" class="rec-offline hidden" aria-live="polite">
+        <p class="rec-offline-icon">◉</p>
+        <p class="rec-offline-title">Recording engine is offline</p>
+        <p class="rec-offline-hint">Screen history isn't available right now. Notes still work. Use the status button above or Engine → Restart Engine in the menu to start recording.</p>
+      </div>
+    </div>
+
+    <!-- Pakr panel — conversational note reorganizer -->
+    <div id="pakr-panel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-pakr">
+      <div class="pakr-chat" id="pakr-chat" aria-label="Pakr conversation" aria-live="polite">
+        <div class="pakr-empty" id="pakr-empty">
+          Ask Pakr anything about PakrAI — shortcuts, tabs, resurfacing — or reorganize your notes.<br>
+          <span class="pakr-empty-example">Examples: What does ⌘⇧R do? · Move Client A notes into Q2 and tag <code>client-a</code>.</span>
+        </div>
+      </div>
+      <div class="pakr-confirm-row hidden" id="pakr-confirm-row">
+        <span class="pakr-confirm-summary" id="pakr-confirm-summary"></span>
+        <button type="button" class="pakr-confirm-btn" id="pakr-confirm-btn">Confirm</button>
+        <button type="button" class="pakr-cancel-btn" id="pakr-cancel-btn">Cancel</button>
+      </div>
+      <div class="pakr-input-row">
+        <textarea class="pakr-input" id="pakr-input" placeholder="Ask about PakrAI or reorganize notes…" rows="2" aria-label="Message to Pakr"></textarea>
+        <button type="button" class="pakr-send-btn" id="pakr-send-btn">Send</button>
+      </div>
+    </div>
+
   </main>
   <div id="image-lightbox" class="image-lightbox hidden" role="dialog" aria-modal="true" aria-label="Image preview">
     <button type="button" class="image-lightbox-close" aria-label="Close">×</button>

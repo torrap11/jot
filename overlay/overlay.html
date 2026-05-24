@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
-  <title>Jot</title>
+  <title>PakrAI</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -339,13 +339,50 @@
       border-color: var(--accent);
       box-shadow: 0 0 0 1px var(--accent-dim);
     }
+
+    /* Recall card — screen-context card from the recall engine */
+    .recall-card {
+      background: rgba(10, 132, 255, 0.05);
+      border: 1px solid rgba(10, 132, 255, 0.25);
+      border-radius: var(--card-radius);
+      padding: 10px 12px;
+      opacity: 0;
+      animation: cardIn 0.25s ease-out forwards;
+    }
+
+    /* Why-now chips row */
+    .why-now-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 7px;
+    }
+
+    .why-chip {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 10px;
+      background: rgba(10, 132, 255, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(10, 132, 255, 0.28);
+      white-space: nowrap;
+      letter-spacing: 0.01em;
+    }
+
+    /* Never-app action button */
+    .action-btn.never-app {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(255, 255, 255, 0.1);
+      color: var(--dim);
+    }
+    .action-btn.never-app:hover { color: var(--danger); border-color: var(--danger); }
   </style>
 </head>
 <body>
   <div id="header">
     <div id="header-left">
-      <span id="header-app">Jot</span>
-      <span id="header-label">· relevant notes</span>
+      <span id="header-app">PakrAI</span>
+      <span id="header-label" aria-live="polite">· relevant notes</span>
     </div>
     <div id="header-right">
       <span class="kbd-hint">dbl-click command · K open · S snooze · D done</span>

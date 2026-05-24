@@ -9,20 +9,21 @@
 </head>
 <body class="capture-body">
   <main class="capture-shell">
-    <header id="capture-drag-handle" class="capture-titlebar" title="Drag to move">
-      <div class="capture-mode-tabs">
-        <button type="button" id="capture-mode-note" class="capture-mode-btn is-active" data-mode="note">Note</button>
-        <button
-          type="button"
-          id="capture-mode-reminder"
-          class="capture-mode-btn"
-          data-mode="reminder"
-          title="Two-finger tap to set a reminder workflow"
-        >Reminder</button>
-      </div>
-    </header>
+    <header id="capture-drag-handle" class="capture-titlebar" title="Drag to move" aria-label="Capture"></header>
     <p id="capture-workflow-status" class="capture-workflow-status capture-workflow-status--hidden" role="status" aria-live="polite"></p>
-    <textarea id="capture-input" placeholder="Type a note… Enter saves" autofocus></textarea>
+    <textarea
+      id="capture-input"
+      placeholder="Type a note, or e.g. remind me to check deploy when I open Cursor — Enter saves"
+      autofocus
+    ></textarea>
+    <div class="organize-hint-row capture-organize-hint-row">
+      <label for="capture-organize-hint">Organization instructions</label>
+      <textarea
+        id="capture-organize-hint"
+        rows="2"
+        placeholder="e.g. file into Research + App Ideas folders"
+      ></textarea>
+    </div>
     <div class="capture-folder-row folder-row">
       <label for="capture-folder-select">Folder</label>
       <select id="capture-folder-select" aria-label="Save note into folder">

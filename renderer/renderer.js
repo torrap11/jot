@@ -58,6 +58,9 @@ const resultsEl = document.getElementById('results');
 const editorEl = document.getElementById('editor');
 const editorDateEl = document.getElementById('editor-date');
 const editorTextEl = document.getElementById('editor-text');
+const editorOrganizeHintEl = document.getElementById('editor-organize-hint');
+const editorOrganizeStatusEl = document.getElementById('editor-organize-status');
+const editorOrganizeBtn = document.getElementById('editor-organize-btn');
 const closeEditorBtn = document.getElementById('close-editor-btn');
 const copyBtn = document.getElementById('copy-note-btn');
 const attachImageBtn = document.getElementById('attach-image-btn');
@@ -180,18 +183,23 @@ function openImageLightbox(src, alt) {
   document.addEventListener('keydown', imageLightboxKeydownHandler);
 }
 
-function closeEditor() {
+async function closeEditor() {
   clearTimeout(saveTimer);
+  await flushActiveNote();
   closeImageLightbox();
   state.activeId = null;
+  window.__jotActiveNoteId = null;
   resetLinkHistory();
   editorEl.closest('.search-shell')?.classList.remove('editor-open');
   editorEl.classList.add('hidden');
   editorTextEl.value = '';
+  if (editorOrganizeHintEl) editorOrganizeHintEl.value = '';
+  if (editorOrganizeStatusEl) editorOrganizeStatusEl.textContent = '';
   editorFolderSelect.value = 'unfiled';
   linksEl.innerHTML = '';
   noteImagesEl.innerHTML = '';
   noteFilesEl.innerHTML = '';
+  dockInlineEditor();
   renderResults();
   if (state.listFocusId != null) focusListRow(state.listFocusId);
   else queryInput.focus();
@@ -202,6 +210,29 @@ function focusListRow(noteId) {
   requestAnimationFrame(() => {
     const btn = resultsEl.querySelector(`.result[data-id="${noteId}"]`);
     btn?.focus();
+  });
+}
+
+/** Keep the note editor directly under the active list row (not at the bottom). */
+function dockInlineEditor() {
+  if (!editorEl || !resultsEl) return;
+  const editorOpen = !editorEl.classList.contains('hidden') && state.activeId != null;
+  if (editorOpen) {
+    const row = resultsEl.querySelector(`.result-row[data-id="${state.activeId}"]`);
+    if (row && row.nextElementSibling !== editorEl) {
+      row.insertAdjacentElement('afterend', editorEl);
+    }
+    return;
+  }
+  if (editorEl.parentElement !== resultsEl.parentElement || editorEl.previousElementSibling !== resultsEl) {
+    resultsEl.insertAdjacentElement('afterend', editorEl);
+  }
+}
+
+function scrollActiveNoteRowIntoView(noteId) {
+  requestAnimationFrame(() => {
+    const row = resultsEl.querySelector(`.result-row[data-id="${noteId}"]`);
+    row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   });
 }
 
@@ -229,7 +260,8 @@ async function applyFolderFilterFromNav(newFilter) {
 function updateBulkActionsUi() {
   const count = state.selectedIds.size;
   selectedCountEl.textContent = `${count} selected`;
-  bulkActionsEl.classList.toggle('hidden', count === 0);
+  const showBulk = unifiedSearchScope === 'notes' && count > 0;
+  bulkActionsEl.classList.toggle('hidden', !showBulk);
 }
 
 function escapeHtml(value) {
@@ -662,11 +694,129 @@ newFolderModal?.addEventListener('click', (event) => {
   if (event.target === newFolderModal) hideNewFolderModal();
 });
 
+let unifiedSearchScope = 'all';
+let unifiedCaptureTimer = null;
+
+const unifiedStatusEl = document.getElementById('unified-search-status');
+const unifiedCaptureEl = document.getElementById('unified-capture-results');
+
+function contentTypeForUnifiedScope(scope) {
+  if (scope === 'screen') return 'accessibility';
+  if (scope === 'audio') return 'audio';
+  return 'all';
+}
+
+function shouldShowNotesForScope() {
+  return unifiedSearchScope === 'all' || unifiedSearchScope === 'notes';
+}
+
+function shouldRunUnifiedCaptureSearch(text) {
+  if (unifiedSearchScope === 'notes') return false;
+  if (!text && unifiedSearchScope === 'all') return false;
+  return true;
+}
+
+const UNIFIED_QUERY_PLACEHOLDERS = {
+  all: 'Search notes, screen, and audio…',
+  notes: 'Search notes…',
+  screen: 'Search screen history…',
+  audio: 'Search audio transcripts…',
+};
+
+function updateUnifiedScopeChrome() {
+  const notesScope = unifiedSearchScope === 'notes';
+  document.getElementById('folder-diagram')?.classList.toggle('hidden', !notesScope);
+  if (queryInput) {
+    queryInput.placeholder =
+      UNIFIED_QUERY_PLACEHOLDERS[unifiedSearchScope] || UNIFIED_QUERY_PLACEHOLDERS.all;
+  }
+  updateBulkActionsUi();
+}
+
+async function runUnifiedCaptureSearch(text) {
+  if (!unifiedCaptureEl || !unifiedStatusEl) return;
+
+  if (!shouldRunUnifiedCaptureSearch(text)) {
+    unifiedCaptureEl.innerHTML = '';
+    unifiedCaptureEl.classList.add('hidden');
+    unifiedStatusEl.classList.add('hidden');
+    unifiedStatusEl.textContent = '';
+    return;
+  }
+
+  const browsing = !text;
+  unifiedCaptureEl.classList.remove('hidden');
+  unifiedStatusEl.classList.remove('hidden');
+  unifiedStatusEl.textContent = browsing
+    ? unifiedSearchScope === 'audio'
+      ? 'Loading recent audio…'
+      : 'Loading recent screen captures…'
+    : 'Searching screen & audio…';
+  unifiedCaptureEl.innerHTML = '';
+
+  const [searchResult, memResult] = await Promise.all([
+    window.mvp.screenpipeSearch({
+      q: text,
+      start_time: '7d ago',
+      content_type: contentTypeForUnifiedScope(unifiedSearchScope),
+      limit: browsing ? 15 : 12,
+    }),
+    text && unifiedSearchScope === 'all'
+      ? window.mvp.screenpipeMemories({ q: text, limit: 5 })
+      : Promise.resolve({ ok: false }),
+  ]);
+
+  const cards = [];
+
+  if (memResult.ok && unifiedSearchScope === 'all') {
+    const mems = Array.isArray(memResult.data) ? memResult.data : [];
+    mems.forEach((mem) => {
+      const card = buildCaptureCard({
+        badgeClass: 'memory',
+        badgeLabel: 'Memory',
+        appName: '',
+        timestamp: formatTimestamp(mem.created_at),
+        snippet: mem.content || '',
+      });
+      cards.push(card);
+    });
+  }
+
+  if (searchResult.ok) {
+    const items = searchResult.data || [];
+    items.forEach((item) => cards.push(renderCaptureResult(item)));
+  } else if (searchResult.error === 'screenpipe client not loaded') {
+    unifiedStatusEl.textContent = 'Screen history: engine offline.';
+    return;
+  }
+
+  if (cards.length === 0) {
+    unifiedStatusEl.textContent = browsing
+      ? 'No recent captures in the last 7 days — type keywords to search.'
+      : 'No screen or audio matches.';
+    return;
+  }
+
+  unifiedStatusEl.textContent = browsing
+    ? `${cards.length} recent ${unifiedSearchScope === 'audio' ? 'audio' : 'screen'} (7d) — type to narrow`
+    : `${cards.length} from screen & audio`;
+  cards.forEach((card) => unifiedCaptureEl.appendChild(card));
+}
+
+function scheduleUnifiedCaptureSearch(text) {
+  clearTimeout(unifiedCaptureTimer);
+  unifiedCaptureTimer = setTimeout(() => void runUnifiedCaptureSearch(text), 400);
+}
+
 async function runQuery(text) {
   state.isDefaultList = !text;
-  state.notes = text
-    ? await window.mvp.queryNotes(text, state.folderFilter)
-    : await window.mvp.recentNotes(state.folderFilter);
+  updateUnifiedScopeChrome();
+  const showNotes = shouldShowNotesForScope();
+  state.notes = !showNotes
+    ? []
+    : text
+      ? await window.mvp.queryNotes(text, state.folderFilter)
+      : await window.mvp.recentNotes(state.folderFilter);
   const validIds = new Set(state.notes.map((n) => n.id));
   state.selectedIds = new Set([...state.selectedIds].filter((id) => validIds.has(id)));
   if (state.listFocusId != null && !state.notes.some((n) => n.id === state.listFocusId)) {
@@ -675,11 +825,48 @@ async function runQuery(text) {
   renderResults();
   updateBulkActionsUi();
   await refreshFolderDiagram();
+  scheduleUnifiedCaptureSearch(text);
+}
+
+/**
+ * Extract a contextual snippet around the first occurrence of `query` in `text`.
+ * Falls back to the first line if no match or no query.
+ */
+function extractSnippet(text, query) {
+  const body = String(text || '');
+  if (!query) return body.split('\n')[0].slice(0, 120);
+  const lower = body.toLowerCase();
+  const idx = lower.indexOf(query.toLowerCase());
+  if (idx < 0) return body.split('\n')[0].slice(0, 120);
+  const start = Math.max(0, idx - 40);
+  const end = Math.min(body.length, idx + query.length + 80);
+  const snippet = body.slice(start, end);
+  return (start > 0 ? '…' : '') + snippet + (end < body.length ? '…' : '');
+}
+
+/**
+ * Escape HTML and wrap every occurrence of `query` in a `<mark>` tag.
+ */
+function highlightSnippet(snippetText, query) {
+  const safe = escapeHtml(snippetText);
+  if (!query) return safe;
+  const escapedQuery = escapeHtml(query).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return safe.replace(new RegExp(escapedQuery, 'gi'), (m) => `<mark class="search-hl">${m}</mark>`);
 }
 
 function renderResults() {
+  if (!shouldShowNotesForScope()) {
+    const label = unifiedSearchScope === 'audio' ? 'Audio' : 'Screen';
+    resultsEl.innerHTML = `<div class="empty">${label} results appear above. Type in the search box to filter.</div>`;
+    return;
+  }
   if (state.notes.length === 0) {
-    resultsEl.innerHTML = '<div class="empty">No notes found.</div>';
+    const q = queryInput.value.trim();
+    if (q && unifiedSearchScope !== 'notes') {
+      resultsEl.innerHTML = '<div class="empty">No notes — see screen/audio above.</div>';
+    } else {
+      resultsEl.innerHTML = '<div class="empty">No notes found.</div>';
+    }
     return;
   }
   const sameLocalDay = state.notes.every(
@@ -688,9 +875,16 @@ function renderResults() {
   // When not searching, if every visible note shares one local day, show time-only in the list.
   const hideDate = state.isDefaultList && sameLocalDay;
 
-  resultsEl.innerHTML = state.notes
+  const activeQuery = state.isDefaultList ? '' : queryInput.value.trim();
+  const countLabel = state.notes.length === 1 ? '1 note' : `${state.notes.length} notes`;
+  const countHtml = activeQuery
+    ? `<div class="results-count" aria-live="polite">${countLabel} for <em>${escapeHtml(activeQuery)}</em></div>`
+    : '';
+
+  const rows = state.notes
     .map((note) => {
-      const preview = note.text.split('\n')[0].slice(0, 120);
+      const snippet = extractSnippet(note.text, activeQuery);
+      const snippetHtml = highlightSnippet(snippet, activeQuery);
       const dateText = hideDate ? formatTimeOnly(note.created_at) : formatDate(note.created_at);
       const folderText = folderLabel(note.folder_id);
       const safeTime = escapeHtml(dateText || 'Unknown');
@@ -709,12 +903,15 @@ function renderResults() {
             <span class="meta-sep">|</span>
             <span class="meta-value meta-folder-value">${safeFolder}</span>
           </span>
-          <span class="result-text">${escapeHtml(preview)}</span>
+          <span class="result-text">${snippetHtml}</span>
         </button>
         <button type="button" class="result-delete" data-id="${note.id}" title="Delete note">×</button>
       </div>`;
     })
     .join('');
+
+  resultsEl.innerHTML = countHtml + rows;
+  dockInlineEditor();
 }
 
 async function startComposeNote() {
@@ -729,21 +926,22 @@ async function openNote(noteId) {
   if (!note) return;
   const switchedNotes = state.activeId !== note.id;
   state.activeId = note.id;
+  window.__jotActiveNoteId = note.id;
   state.listFocusId = note.id;
   if (switchedNotes) resetLinkHistory();
   editorEl.classList.remove('hidden');
   editorDateEl.textContent = formatDate(note.created_at);
-  editorTextEl.value = note.text;
+  editorTextEl.value = note.text || '';
+  if (editorOrganizeHintEl) editorOrganizeHintEl.value = note.organize_hint || '';
+  if (editorOrganizeStatusEl) editorOrganizeStatusEl.textContent = '';
   editorFolderSelect.value = note.folder_id == null ? 'unfiled' : String(note.folder_id);
   editorEl.closest('.search-shell')?.classList.add('editor-open');
   renderResults();
   await renderLinks();
   await renderNoteImages();
   await renderNoteFiles();
-  requestAnimationFrame(() => {
-    editorTextEl.focus();
-    editorEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  });
+  scrollActiveNoteRowIntoView(note.id);
+  requestAnimationFrame(() => editorTextEl.focus());
 }
 
 async function renderLinks() {
@@ -810,13 +1008,53 @@ async function renderNoteFiles() {
     .join('');
 }
 
-async function saveActiveNote() {
-  if (!state.activeId) return;
-  const value = editorTextEl.value.trim();
-  if (!value) return;
-  await window.mvp.updateNote(state.activeId, value);
+async function runOrganizeForActiveNote() {
+  if (!state.activeId || !editorOrganizeHintEl) return;
+  const hint = editorOrganizeHintEl.value.trim();
+  if (!hint) {
+    if (editorOrganizeStatusEl) {
+      editorOrganizeStatusEl.textContent = 'Add organization instructions first.';
+    }
+    return;
+  }
+  if (editorOrganizeBtn) editorOrganizeBtn.disabled = true;
+  if (editorOrganizeStatusEl) editorOrganizeStatusEl.textContent = 'Organizing…';
+  const result = await window.mvp.organizeNoteFromHint({
+    noteId: state.activeId,
+    noteText: editorTextEl.value,
+    organizeHint: hint,
+  });
+  if (editorOrganizeBtn) editorOrganizeBtn.disabled = false;
+  if (result.skipped) {
+    if (editorOrganizeStatusEl) {
+      editorOrganizeStatusEl.textContent =
+        result.reason === 'no_api_key' ? 'Add API key (Engine menu) to organize.' : '';
+    }
+    return;
+  }
+  if (result.error) {
+    if (editorOrganizeStatusEl) editorOrganizeStatusEl.textContent = result.error;
+    return;
+  }
+  if (editorOrganizeStatusEl) {
+    editorOrganizeStatusEl.textContent = result.reply || 'Organized.';
+  }
+  await loadFolders();
   await runQuery(queryInput.value.trim());
+  if (state.activeId) await openNote(state.activeId);
 }
+
+async function flushActiveNote() {
+  if (!state.activeId) return { ok: false };
+  const value = editorTextEl.value.trim();
+  const hint = editorOrganizeHintEl ? editorOrganizeHintEl.value.trim() : '';
+  if (value) await window.mvp.updateNote(state.activeId, value);
+  if (editorOrganizeHintEl) await window.mvp.setOrganizeHint(state.activeId, hint);
+  await runQuery(queryInput.value.trim());
+  return { ok: true, noteId: state.activeId };
+}
+
+window.__jotFlushActiveNote = () => flushActiveNote();
 
 async function removeNoteById(id) {
   if (!Number.isFinite(id)) return;
@@ -884,7 +1122,7 @@ function showCleanupStatus(text) {
 
 cleanupNotesBtn?.addEventListener('click', async () => {
   const ok = confirm(
-    'Run Clean DB?\n\n• Removes duplicate saves (same text and timestamp).\n• Merges notes whose text only differs by spacing or capital letters.\n• If an Anthropic API key is set, AI may merge overlapping ideas and tidy folders.',
+    'Run Clean DB?\n\n• Removes duplicate saves (same text and timestamp).\n• Merges notes whose text only differs by spacing or capital letters.\n• With an Anthropic API key, AI can merge overlapping ideas and reorganize folders (manual only — never automatic).',
   );
   if (!ok) return;
   cleanupNotesBtn.disabled = true;
@@ -1089,8 +1327,19 @@ resultsEl.addEventListener(
 editorTextEl.addEventListener('input', () => {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    saveActiveNote();
+    void flushActiveNote();
   }, 250);
+});
+
+editorOrganizeHintEl?.addEventListener('input', () => {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    void flushActiveNote();
+  }, 250);
+});
+
+editorOrganizeBtn?.addEventListener('click', () => {
+  void runOrganizeForActiveNote();
 });
 
 editorTextEl.addEventListener('keydown', (event) => {
@@ -1494,8 +1743,25 @@ anthropicKeyLink?.addEventListener('click', (event) => {
 
 window.mvp.onSearchFocus(async (payload) => {
   await runQuery(queryInput.value.trim());
+  if (payload && payload.composeDraft != null) {
+    const draftText = String(payload.composeDraft || '').trim();
+    const note = draftText ? await window.mvp.createNote(draftText) : await window.mvp.createNote('');
+    if (!note?.id) return;
+    await runQuery(queryInput.value.trim());
+    await openNote(note.id);
+    if (editorOrganizeHintEl && payload.organizeHint) {
+      editorOrganizeHintEl.value = String(payload.organizeHint);
+      await window.mvp.setOrganizeHint(note.id, payload.organizeHint);
+    }
+    if (payload.appKey) await window.mvp.addLink(note.id, payload.appKey);
+    return;
+  }
   if (payload && payload.compose) {
     await startComposeNote();
+    return;
+  }
+  if (state.activeId) {
+    await openNote(state.activeId);
     return;
   }
   queryInput.focus();
@@ -1525,4 +1791,474 @@ async function init() {
 
 init().catch((error) => {
   resultsEl.innerHTML = `<div class="empty">Failed to load: ${escapeHtml(error.message || String(error))}</div>`;
+});
+
+// ── Phase 3: Tabs + engine status + Rewind + Ask ──────────────────────────
+
+// ── Main tab navigation: Notes | Recordings ──────────────────────────────
+const notesPanel = document.getElementById('notes-panel');
+const recordingsPanel = document.getElementById('recordings-panel');
+const pakrPanel = document.getElementById('pakr-panel');
+
+function switchTab(name) {
+  const isNotes = name === 'notes';
+  const isRecordings = name === 'recordings';
+  const isPakr = name === 'pakr';
+
+  notesPanel.classList.toggle('hidden', !isNotes);
+  recordingsPanel.classList.toggle('hidden', !isRecordings);
+  if (pakrPanel) pakrPanel.classList.toggle('hidden', !isPakr);
+
+  document.querySelectorAll('.tab[data-tab]').forEach((btn) => {
+    const active = btn.dataset.tab === name;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', String(active));
+  });
+
+  if (isNotes) {
+    queryInput.focus();
+  } else if (isRecordings) {
+    void syncRecordingsOfflineState();
+    document.getElementById('rec-query')?.focus();
+  } else if (isPakr) {
+    document.getElementById('pakr-input')?.focus();
+  }
+}
+
+document.querySelectorAll('.tab[data-tab]').forEach((btn) => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+// ⌘⇧P shortcut from main process
+window.mvp.onSwitchTab((tab) => switchTab(tab));
+
+// ── Pakr agent ────────────────────────────────────────────────────────────────
+
+let pakrHistory = [];
+let pakrPending = null; // { confirmRequired: true, summary: string, message: string }
+
+const pakrChatEl = document.getElementById('pakr-chat');
+const pakrEmptyEl = document.getElementById('pakr-empty');
+const pakrInputEl = document.getElementById('pakr-input');
+const pakrSendBtn = document.getElementById('pakr-send-btn');
+const pakrConfirmRow = document.getElementById('pakr-confirm-row');
+const pakrConfirmSummary = document.getElementById('pakr-confirm-summary');
+const pakrConfirmBtn = document.getElementById('pakr-confirm-btn');
+const pakrCancelBtn = document.getElementById('pakr-cancel-btn');
+
+function appendPakrMsg(role, text, isThinking = false) {
+  if (pakrEmptyEl) pakrEmptyEl.style.display = 'none';
+  const div = document.createElement('div');
+  div.className = isThinking
+    ? 'pakr-msg pakr-msg-thinking'
+    : role === 'user'
+      ? 'pakr-msg pakr-msg-user'
+      : 'pakr-msg pakr-msg-assistant';
+  div.textContent = text;
+  if (pakrChatEl) {
+    pakrChatEl.appendChild(div);
+    pakrChatEl.scrollTop = pakrChatEl.scrollHeight;
+  }
+  return div;
+}
+
+function setPakrConfirmRow(pending) {
+  pakrPending = pending;
+  if (!pakrConfirmRow) return;
+  if (pending) {
+    pakrConfirmRow.classList.remove('hidden');
+    if (pakrConfirmSummary) pakrConfirmSummary.textContent = pending.summary || 'Confirm operation?';
+  } else {
+    pakrConfirmRow.classList.add('hidden');
+  }
+}
+
+async function sendPakrMessage(message) {
+  const text = String(message || '').trim();
+  if (!text) return;
+  setPakrConfirmRow(null);
+  appendPakrMsg('user', text);
+  if (pakrInputEl) pakrInputEl.value = '';
+  if (pakrSendBtn) pakrSendBtn.disabled = true;
+  const thinking = appendPakrMsg('assistant', 'Thinking…', true);
+  try {
+    const result = await window.mvp.pakraChat({ history: pakrHistory, message: text });
+    if (thinking && thinking.parentNode) thinking.remove();
+    if (result && result.reply) {
+      appendPakrMsg('assistant', result.reply);
+    }
+    if (result && result.history) pakrHistory = result.history;
+    if (result && result.confirmRequired) {
+      setPakrConfirmRow({ ...result.confirmRequired, message: text });
+    }
+  } catch (err) {
+    if (thinking && thinking.parentNode) thinking.remove();
+    appendPakrMsg('assistant', `Error: ${err.message || String(err)}`);
+  } finally {
+    if (pakrSendBtn) pakrSendBtn.disabled = false;
+    if (pakrInputEl) pakrInputEl.focus();
+  }
+}
+
+pakrSendBtn?.addEventListener('click', () => {
+  void sendPakrMessage(pakrInputEl?.value || '');
+});
+
+pakrInputEl?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    void sendPakrMessage(pakrInputEl.value);
+  }
+});
+
+pakrConfirmBtn?.addEventListener('click', () => {
+  if (!pakrPending) return;
+  const confirmMessage = `Confirmed. Please proceed with: ${pakrPending.summary}`;
+  setPakrConfirmRow(null);
+  void sendPakrMessage(confirmMessage);
+});
+
+pakrCancelBtn?.addEventListener('click', () => {
+  setPakrConfirmRow(null);
+  appendPakrMsg('assistant', 'Operation cancelled.');
+});
+
+document.querySelectorAll('#unified-type-chips .chip').forEach((chip) => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('#unified-type-chips .chip').forEach((c) => c.classList.remove('active'));
+    chip.classList.add('active');
+    unifiedSearchScope = chip.dataset.scope || 'all';
+    updateUnifiedScopeChrome();
+    void runQuery(queryInput.value.trim());
+  });
+});
+
+// Engine status badge + recording toggle
+const engineToggleBtn = document.getElementById('engine-toggle');
+const engineDotEl = document.getElementById('engine-dot');
+const engineLabelEl = document.getElementById('engine-label');
+let engineToggleBusy = false;
+
+function setEngineStatus(state) {
+  const classes = ['recording', 'connected', 'offline', 'paused', 'starting'];
+  classes.forEach((c) => engineDotEl.classList.toggle(c, c === state));
+  const labels = {
+    recording: 'recording',
+    connected: 'connected',
+    paused: 'paused',
+    starting: 'starting…',
+    offline: 'offline',
+  };
+  engineLabelEl.textContent = labels[state] || 'offline';
+  if (engineToggleBtn) {
+    engineToggleBtn.title =
+      state === 'offline'
+        ? 'Engine offline — click to retry'
+        : state === 'paused'
+          ? 'Recording paused — click to resume'
+          : 'Recording on — click to pause';
+  }
+}
+
+async function pollEngineState() {
+  try {
+    const { state } = await window.mvp.screenpipeEngineState();
+    const normalized =
+      state === 'recording' || state === 'connected' || state === 'paused' || state === 'starting'
+        ? state
+        : 'offline';
+    setEngineStatus(normalized);
+    if (!recordingsPanel.classList.contains('hidden')) {
+      const offlineEl = document.getElementById('rec-offline');
+      const searchPane = document.getElementById('rec-search-pane');
+      const askPane = document.getElementById('rec-ask-pane');
+      const modeBar = document.querySelector('.recordings-modes');
+      const offline = normalized === 'offline';
+      if (offlineEl) offlineEl.classList.toggle('hidden', !offline);
+      if (searchPane) searchPane.classList.toggle('hidden', offline || recActiveMode !== 'search');
+      if (askPane) askPane.classList.toggle('hidden', offline || recActiveMode !== 'ask');
+      if (modeBar) modeBar.classList.toggle('hidden', offline);
+    }
+  } catch {
+    setEngineStatus('offline');
+  }
+}
+
+engineToggleBtn?.addEventListener('click', () => {
+  if (engineToggleBusy) return;
+  engineToggleBusy = true;
+  engineToggleBtn.disabled = true;
+  void window.mvp
+    .toggleScreenpipeCapture()
+    .then(() => pollEngineState())
+    .catch(() => setEngineStatus('offline'))
+    .finally(() => {
+      engineToggleBusy = false;
+      engineToggleBtn.disabled = false;
+    });
+});
+
+window.mvp.onEngineStateChanged?.(() => {
+  void pollEngineState();
+});
+
+void pollEngineState();
+setInterval(pollEngineState, 12_000);
+
+if (window.mvp.onRecallManualResult) {
+  window.mvp.onRecallManualResult((decision) => {
+    if (!decision || !decision.available) {
+      showCleanupStatus('Manual recall: engine unavailable.');
+      return;
+    }
+    if (decision.action === 'surface' && decision.candidate) return;
+    const reason = decision.reason_primary || decision.action || 'silence';
+    showCleanupStatus(
+      reason === 'no_candidates'
+        ? 'Manual recall (⌘⇧R): nothing matched yet — browse with distinct window titles, then try again.'
+        : `Manual recall (⌘⇧R): ${reason}.`
+    );
+  });
+}
+
+// ── Recordings panel — Search + Ask over screen history ──────────────────
+
+let recActiveType = 'all';
+let recActiveMode = 'search';
+
+function syncRecordingsOfflineState() {
+  return window.mvp.screenpipeEngineState().then(({ state }) => {
+    const offline = state === 'offline' || !state;
+    const offlineEl = document.getElementById('rec-offline');
+    const searchPane = document.getElementById('rec-search-pane');
+    const askPane = document.getElementById('rec-ask-pane');
+    const modeBar = document.querySelector('.recordings-modes');
+    if (offlineEl) offlineEl.classList.toggle('hidden', !offline);
+    if (searchPane) searchPane.classList.toggle('hidden', offline || recActiveMode !== 'search');
+    if (askPane) askPane.classList.toggle('hidden', offline || recActiveMode !== 'ask');
+    if (modeBar) modeBar.classList.toggle('hidden', offline);
+  }).catch(() => {
+    document.getElementById('rec-offline')?.classList.remove('hidden');
+    document.getElementById('rec-search-pane')?.classList.add('hidden');
+    document.getElementById('rec-ask-pane')?.classList.add('hidden');
+  });
+}
+
+function switchRecMode(mode) {
+  recActiveMode = mode;
+  document.querySelectorAll('.rec-mode-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+  document.getElementById('rec-search-pane').classList.toggle('hidden', mode !== 'search');
+  document.getElementById('rec-ask-pane').classList.toggle('hidden', mode !== 'ask');
+  if (mode === 'search') document.getElementById('rec-query')?.focus();
+  else document.getElementById('rec-ask-query')?.focus();
+}
+
+document.querySelectorAll('.rec-mode-btn').forEach((btn) => {
+  btn.addEventListener('click', () => switchRecMode(btn.dataset.mode));
+});
+
+document.querySelectorAll('#rec-type-chips .chip').forEach((chip) => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('#rec-type-chips .chip').forEach((c) => c.classList.remove('active'));
+    chip.classList.add('active');
+    recActiveType = chip.dataset.type;
+  });
+});
+
+function formatTimestamp(ts) {
+  if (!ts) return '';
+  try {
+    const d = new Date(ts);
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch { return String(ts).slice(0, 16); }
+}
+
+function buildCaptureCard({ badgeClass, badgeLabel, appName, timestamp, snippet }) {
+  const card = document.createElement('div');
+  card.className = 'capture-card';
+  card.setAttribute('role', 'listitem');
+  card.innerHTML = `
+    <div class="capture-card-header">
+      <span class="source-badge ${escapeHtml(badgeClass)}">${escapeHtml(badgeLabel)}</span>
+      <span class="capture-card-app">${escapeHtml(appName || '')}</span>
+      <span class="capture-card-time">${escapeHtml(timestamp)}</span>
+    </div>
+    <div class="capture-card-snippet">${escapeHtml((snippet || '').slice(0, 400))}</div>
+  `;
+  return card;
+}
+
+function renderCaptureResult(item) {
+  const type = String(item.type || '').toLowerCase();
+  const c = item.content || {};
+  if (type === 'ocr' || type === 'ui' || type === 'accessibility') {
+    return buildCaptureCard({
+      badgeClass: 'screen',
+      badgeLabel: 'Screen',
+      appName: c.app_name || c.app || '',
+      timestamp: formatTimestamp(c.timestamp),
+      snippet: c.text || c.content || '',
+    });
+  }
+  if (type === 'audio') {
+    return buildCaptureCard({
+      badgeClass: 'audio',
+      badgeLabel: 'Audio',
+      appName: c.speaker ? `Speaker: ${c.speaker.name || 'unknown'}` : '',
+      timestamp: formatTimestamp(c.timestamp),
+      snippet: c.transcription || '',
+    });
+  }
+  return buildCaptureCard({
+    badgeClass: 'screen',
+    badgeLabel: type || 'Capture',
+    appName: c.app_name || '',
+    timestamp: formatTimestamp(c.timestamp),
+    snippet: c.text || c.transcription || JSON.stringify(c).slice(0, 200),
+  });
+}
+
+async function runRecordingsSearch() {
+  const statusEl = document.getElementById('rec-search-status');
+  const resultsEl = document.getElementById('rec-search-results');
+  const q = document.getElementById('rec-query').value.trim();
+  const startTime = document.getElementById('rec-time-range').value;
+  const appName = document.getElementById('rec-app-filter').value.trim();
+
+  statusEl.textContent = 'Searching…';
+  resultsEl.innerHTML = '';
+
+  const params = { q, start_time: startTime, content_type: recActiveType, limit: 20 };
+  if (appName) params.app_name = appName;
+
+  const result = await window.mvp.screenpipeSearch(params);
+
+  if (!result.ok) {
+    const engineOffline =
+      result.error === 'screenpipe client not loaded' ||
+      result.error?.includes('ECONNREFUSED') ||
+      result.error?.includes('timeout');
+    statusEl.textContent = engineOffline
+      ? 'Recording engine is offline — start it from the status button above.'
+      : `Search error: ${result.error}`;
+    if (engineOffline) void syncRecordingsOfflineState();
+    return;
+  }
+
+  const items = result.data || [];
+  statusEl.textContent = items.length === 0
+    ? (q ? 'No results for that query.' : 'No recordings yet.')
+    : `${items.length} result${items.length === 1 ? '' : 's'}`;
+  items.forEach((item) => resultsEl.appendChild(renderCaptureResult(item)));
+}
+
+document.getElementById('rec-search-btn').addEventListener('click', () => void runRecordingsSearch());
+document.getElementById('rec-query').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') void runRecordingsSearch();
+});
+
+// ── Recordings Ask — NL query over screen memories + OCR captures ─────────
+
+function buildAskResultCard({ badgeLabel, badgeClass, snippet, timestamp, appName, source }) {
+  const card = document.createElement('div');
+  card.className = 'capture-card';
+  card.setAttribute('role', 'listitem');
+  const citationParts = [];
+  if (appName) citationParts.push(`<span class="rec-citation-app">${escapeHtml(appName)}</span>`);
+  if (timestamp) citationParts.push(`<span>${escapeHtml(timestamp)}</span>`);
+  if (source) citationParts.push(`<span>${escapeHtml(source)}</span>`);
+  const citation = citationParts.length
+    ? `<div class="rec-citation">${citationParts.join(' · ')}</div>`
+    : '';
+  card.innerHTML = `
+    <div class="capture-card-header">
+      <span class="source-badge ${escapeHtml(badgeClass)}">${escapeHtml(badgeLabel)}</span>
+    </div>
+    <div class="capture-card-snippet">${escapeHtml((snippet || '').slice(0, 400))}</div>
+    ${citation}
+  `;
+  return card;
+}
+
+async function runRecordingsAsk() {
+  const statusEl = document.getElementById('rec-ask-status');
+  const resultsEl = document.getElementById('rec-ask-results');
+  const q = document.getElementById('rec-ask-query').value.trim();
+
+  if (!q) return;
+
+  statusEl.textContent = 'Searching…';
+  resultsEl.innerHTML = '';
+
+  const [noteResult, memResult, captureResult] = await Promise.all([
+    window.mvp.queryNotes(q, null),
+    window.mvp.screenpipeMemories({ q, limit: 8 }),
+    window.mvp.screenpipeSearch({ q, start_time: '7d ago', limit: 8 }),
+  ]);
+
+  const cards = [];
+
+  const notes = Array.isArray(noteResult) ? noteResult : [];
+  notes.slice(0, 4).forEach((note) => {
+    cards.push(buildAskResultCard({
+      badgeLabel: 'Note',
+      badgeClass: 'note',
+      snippet: note.text || '',
+      timestamp: note.created_at ? formatTimestamp(note.created_at) : '',
+      appName: '',
+      source: '',
+    }));
+  });
+
+  if (memResult.ok) {
+    (memResult.data || []).slice(0, 4).forEach((mem) => {
+      cards.push(buildAskResultCard({
+        badgeLabel: 'Memory',
+        badgeClass: 'memory',
+        snippet: mem.content || '',
+        timestamp: mem.created_at ? formatTimestamp(mem.created_at) : '',
+        appName: mem.source || '',
+        source: '',
+      }));
+    });
+  }
+
+  if (captureResult.ok) {
+    (captureResult.data || []).slice(0, 4).forEach((item) => {
+      const c = item.content || {};
+      const type = String(item.type || '').toLowerCase();
+      const isScreen = type === 'ocr' || type === 'ui' || type === 'accessibility';
+      cards.push(buildAskResultCard({
+        badgeLabel: isScreen ? 'Screen' : (type === 'audio' ? 'Audio' : 'Capture'),
+        badgeClass: isScreen ? 'screen' : 'audio',
+        snippet: c.text || c.content || c.transcription || '',
+        timestamp: c.timestamp ? formatTimestamp(c.timestamp) : '',
+        appName: c.app_name || c.app || '',
+        source: 'recording',
+      }));
+    });
+  }
+
+  if (cards.length === 0) {
+    statusEl.textContent = 'No results found. Try a different question.';
+    return;
+  }
+
+  const noteCount = notes.slice(0, 4).length;
+  const memCount = memResult.ok ? (memResult.data || []).slice(0, 4).length : 0;
+  const capCount = captureResult.ok ? (captureResult.data || []).slice(0, 4).length : 0;
+  const parts = [];
+  if (noteCount) parts.push(`${noteCount} note${noteCount > 1 ? 's' : ''}`);
+  if (memCount) parts.push(`${memCount} memor${memCount > 1 ? 'ies' : 'y'}`);
+  if (capCount) parts.push(`${capCount} recording${capCount > 1 ? 's' : ''}`);
+  statusEl.textContent = `${cards.length} result${cards.length > 1 ? 's' : ''} — ${parts.join(', ')}`;
+
+  cards.forEach((card) => resultsEl.appendChild(card));
+}
+
+document.getElementById('rec-ask-btn').addEventListener('click', () => void runRecordingsAsk());
+document.getElementById('rec-ask-query').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') void runRecordingsAsk();
 });

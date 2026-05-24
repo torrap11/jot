@@ -8,6 +8,10 @@ let visibleNoteIds = [];
 let commandTargetNoteId = null;
 let commandPanelOpen = false;
 
+// Recall mode state
+let isRecallMode = false;
+let recallEventId = null;
+
 const commandPanelEl = document.getElementById('command-panel');
 const commandInputEl = document.getElementById('command-input');
 const commandStatusEl = document.getElementById('command-status');
@@ -168,6 +172,8 @@ function removeCardByNoteId(noteId) {
 
 window.overlay.onShow((payload) => {
   hideCommandPanel();
+  isRecallMode = false;
+  recallEventId = null;
   const notes = payload.notes || [];
   activeAppKey = payload.appKey || '';
   if (payload.autoDismissMs) autoDismissMs = payload.autoDismissMs;
@@ -176,7 +182,8 @@ window.overlay.onShow((payload) => {
 
   restartProgressAnimation();
 
-  document.getElementById('header-app').textContent = payload.appName || 'Jot';
+  document.getElementById('header-app').textContent = payload.appName || 'PakrAI';
+  document.getElementById('header-label').textContent = '· relevant notes';
 
   const container = document.getElementById('notes-container');
   container.innerHTML = '';
@@ -196,11 +203,16 @@ window.overlay.onShow((payload) => {
             .join(' · ')}</div>`
         : '';
 
+    const whyChips = Array.isArray(note.whyNow) && note.whyNow.length > 0
+      ? `<div class="why-now-chips">${note.whyNow.map((c) => `<span class="why-chip">${esc(c)}</span>`).join('')}</div>`
+      : '';
+
     const card = document.createElement('div');
     card.className = 'note-card' + (idx === 0 ? ' focused' : '');
     card.dataset.id = String(note.id);
     card.style.animationDelay = `${idx * 55}ms`;
     card.innerHTML = `
+      ${whyChips}
       <div class="note-card-title">${title}</div>
       <div class="note-card-snippet">${snippet}</div>
       ${participantLine}
@@ -212,6 +224,77 @@ window.overlay.onShow((payload) => {
     `;
     container.appendChild(card);
   });
+});
+
+/** Map raw policy reason codes to human-readable chip labels. */
+function formatWhyNowChip(code) {
+  const map = {
+    same_app: 'same app',
+    same_document: 'same document',
+    same_domain: 'same site',
+    same_site: 'same site',
+    title_overlap: 'related window',
+    manual_recall: 'manual recall',
+    recency: 'recently seen',
+    visible_text_overlap: 'visible text match',
+  };
+  return map[String(code)] || String(code).replace(/_/g, ' ');
+}
+
+window.overlay.onRecallSurface((payload) => {
+  hideCommandPanel();
+  isRecallMode = true;
+  recallEventId = payload.eventId != null ? Number(payload.eventId) : null;
+  activeAppKey = payload.appKey || '';
+  if (payload.autoDismissMs) autoDismissMs = payload.autoDismissMs;
+  visibleNoteIds = [];
+  cardCount = 1;
+  focusedIndex = 0;
+
+  restartProgressAnimation();
+
+  document.getElementById('header-app').textContent = payload.appName || 'PakrAI';
+  document.getElementById('header-label').textContent = '· screen recall';
+
+  const container = document.getElementById('notes-container');
+  container.innerHTML = '';
+
+  const candidate = payload.candidate || {};
+  const title = esc(candidate.title || 'Recent Screen Capture');
+  const snippet = esc(candidate.snippet || '');
+  const chipsHtml = (payload.whyNow || [])
+    .slice(0, 4)
+    .map((r) => `<span class="why-chip">${esc(formatWhyNowChip(r))}</span>`)
+    .join('');
+
+  const card = document.createElement('div');
+  card.className = 'recall-card';
+  card.setAttribute('data-recall-event-id', String(recallEventId ?? ''));
+  card.innerHTML = `
+    <div class="note-card-title">${title}</div>
+    ${chipsHtml ? `<div class="why-now-chips">${chipsHtml}</div>` : ''}
+    ${snippet ? `<div class="note-card-snippet">${snippet}</div>` : ''}
+    <div class="note-card-actions">
+      <button type="button" class="action-btn open recall-dismiss">Dismiss <kbd>Esc</kbd></button>
+      <button type="button" class="action-btn snooze recall-snooze">Snooze 30m <kbd>S</kbd></button>
+      <button type="button" class="action-btn never-app recall-never">Never App</button>
+    </div>
+  `;
+
+  card.querySelector('.recall-dismiss').addEventListener('click', () => {
+    if (recallEventId != null) window.overlay.recallDismiss(recallEventId);
+    else window.overlay.dismissAll();
+  });
+  card.querySelector('.recall-snooze').addEventListener('click', () => {
+    if (recallEventId != null) window.overlay.recallSnooze(recallEventId, 30);
+    else window.overlay.notifyEmpty();
+  });
+  card.querySelector('.recall-never').addEventListener('click', () => {
+    if (recallEventId != null) window.overlay.recallNeverApp(recallEventId);
+    else window.overlay.notifyEmpty();
+  });
+
+  container.appendChild(card);
 });
 
 window.overlay.onRemoveCard((payload) => {
@@ -229,7 +312,11 @@ window.overlay.onDismiss(() => {
 });
 
 document.getElementById('dismiss-all').addEventListener('click', () => {
-  window.overlay.dismissAll();
+  if (isRecallMode && recallEventId != null) {
+    window.overlay.recallDismiss(recallEventId);
+  } else {
+    window.overlay.dismissAll();
+  }
 });
 
 document.getElementById('notes-container').addEventListener('click', (e) => {
@@ -285,7 +372,11 @@ document.addEventListener('keydown', (e) => {
   if (cards.length === 0) return;
 
   if (e.key === 'Escape') {
-    window.overlay.dismissAll();
+    if (isRecallMode && recallEventId != null) {
+      window.overlay.recallDismiss(recallEventId);
+    } else {
+      window.overlay.dismissAll();
+    }
     return;
   }
 
@@ -310,8 +401,12 @@ document.addEventListener('keydown', (e) => {
   }
 
   if (e.key === 's' || e.key === 'S') {
-    const id = getFocusedId();
-    if (id != null) window.overlay.snooze(id, activeAppKey, 30);
+    if (isRecallMode && recallEventId != null) {
+      window.overlay.recallSnooze(recallEventId, 30);
+    } else {
+      const id = getFocusedId();
+      if (id != null) window.overlay.snooze(id, activeAppKey, 30);
+    }
     return;
   }
 

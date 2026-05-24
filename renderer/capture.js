@@ -1,23 +1,17 @@
 'use strict';
 
 const input = document.getElementById('capture-input');
+const organizeHintInput = document.getElementById('capture-organize-hint');
 const appInput = document.getElementById('capture-app-input');
 const captureFolderSelect = document.getElementById('capture-folder-select');
 const attachImageBtn = document.getElementById('attach-image-capture-btn');
 const attachFileBtn = document.getElementById('attach-file-capture-btn');
 const pendingImagesEl = document.getElementById('capture-pending-images');
-const modeNoteBtn = document.getElementById('capture-mode-note');
-const modeReminderBtn = document.getElementById('capture-mode-reminder');
 const workflowStatusEl = document.getElementById('capture-workflow-status');
 
 const NOTE_FILE_WHITELIST_EXTS = ['pdf', 'md', 'rmd', 'txt'];
-const PLACEHOLDER_NOTE = 'Type a note… Enter saves';
-const PLACEHOLDER_REMINDER =
-  'Describe the workflow — e.g. remind me to check deploy when i open Cursor';
 let pendingImageDataUrls = [];
 let pendingFileAttachments = [];
-/** @type {'note' | 'reminder'} */
-let captureMode = 'note';
 /** Prevents overlapping saves (double Enter, key repeat, double button click). */
 let captureBusy = false;
 
@@ -34,30 +28,6 @@ function setWorkflowStatus(message, isError = false) {
   workflowStatusEl.classList.toggle('is-error', isError);
 }
 
-function setCaptureMode(mode, { focusInput = true } = {}) {
-  captureMode = mode === 'reminder' ? 'reminder' : 'note';
-  modeNoteBtn?.classList.toggle('is-active', captureMode === 'note');
-  modeReminderBtn?.classList.toggle('is-active', captureMode === 'reminder');
-  input.placeholder = captureMode === 'reminder' ? PLACEHOLDER_REMINDER : PLACEHOLDER_NOTE;
-  if (captureMode === 'reminder') {
-    appInput.placeholder = 'Optional — auto-filled when the workflow names an app';
-    setWorkflowStatus('Enter runs the workflow and links the reminder to that app.');
-  } else {
-    appInput.placeholder = 'Link to app (optional): type app name or bundle id';
-    setWorkflowStatus('');
-  }
-  if (focusInput) {
-    input.focus();
-    if (captureMode === 'reminder' && !input.value.trim()) {
-      input.setSelectionRange(input.value.length, input.value.length);
-    }
-  }
-}
-
-function enterReminderMode() {
-  setCaptureMode('reminder');
-}
-
 async function parseWorkflowFromInput(rawInputValue) {
   const trimmed = String(rawInputValue || '').trim();
   if (!trimmed) return null;
@@ -68,6 +38,7 @@ async function parseWorkflowFromInput(rawInputValue) {
   }
 }
 
+/** True when text looks like a remind-on-app-open workflow (not a plain note). */
 function shouldTryWorkflowParse(rawInputValue) {
   const trimmed = String(rawInputValue || '').trim();
   if (!trimmed) return false;
@@ -76,6 +47,34 @@ function shouldTryWorkflowParse(rawInputValue) {
     /\bwhen\s+i\s+open\b/i.test(trimmed) ||
     /^surface\s+.+\s+when\s+i\s+open\b/i.test(trimmed)
   );
+}
+
+/** True when text looks like a time-based reminder (P1). Excludes app-open patterns. */
+function looksLikeTimeReminder(rawInputValue) {
+  const t = String(rawInputValue || '').trim().toLowerCase();
+  if (!t) return false;
+  if (!/remind\s+me/.test(t)) return false;
+  if (/when\s+i\s+open/.test(t)) return false;
+  return (
+    /in\s+\d+\s+(?:min|hour|day)/.test(t) ||
+    /at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)/.test(t) ||
+    /\btomorrow\b/.test(t) ||
+    /\btonight\b/.test(t) ||
+    /\bthis\s+(?:evening|afternoon)\b/.test(t)
+  );
+}
+
+/** Run full workflow (parser + AI) vs plain save. Manual app link alone → plain note. */
+function shouldRunWorkflow(rawInputValue, manualAppRaw) {
+  const trimmed = String(rawInputValue || '').trim();
+  if (!trimmed) return false;
+  const manualApp = String(manualAppRaw || '').trim();
+  if (manualApp && !shouldTryWorkflowParse(trimmed)) return false;
+  return shouldTryWorkflowParse(trimmed);
+}
+
+function hasPendingAttachments() {
+  return pendingImageDataUrls.length > 0 || pendingFileAttachments.length > 0;
 }
 
 function escapeHtml(value) {
@@ -121,13 +120,14 @@ function renderPendingImages() {
 
 function resetCaptureForm() {
   input.value = '';
+  if (organizeHintInput) organizeHintInput.value = '';
   appInput.value = '';
   if (captureFolderSelect) captureFolderSelect.value = 'unfiled';
   if (pendingImagesEl) {
     pendingImagesEl.classList.add('hidden');
     pendingImagesEl.innerHTML = '';
   }
-  setCaptureMode('note', { focusInput: false });
+  setWorkflowStatus('');
 }
 
 async function applyManualFolder(noteId, folderValue) {
@@ -136,13 +136,6 @@ async function applyManualFolder(noteId, folderValue) {
     folderValue !== undefined ? folderValue : (captureFolderSelect?.value || 'unfiled');
   if (sel === 'unfiled') return;
   await window.mvp.setNoteFolder(noteId, sel);
-}
-
-async function maybeAiFileNote(noteId, folderValue) {
-  const fv =
-    folderValue !== undefined ? folderValue : (captureFolderSelect?.value || 'unfiled');
-  if (fv && fv !== 'unfiled') return;
-  await fileNoteWithAi(noteId);
 }
 
 function fileToDataUrl(file) {
@@ -164,8 +157,7 @@ function extFromFileName(fileName) {
 function noteTextWithFallback(text) {
   const trimmed = String(text || '').trim();
   if (trimmed) return trimmed;
-  const hasPending = pendingImageDataUrls.length > 0 || pendingFileAttachments.length > 0;
-  return hasPending ? '(attachment)' : '';
+  return hasPendingAttachments() ? '(attachment)' : '';
 }
 
 async function attachPendingArraysToNote(noteId, imageDataUrls, fileAttachments) {
@@ -181,35 +173,6 @@ async function attachPendingToNote(noteId) {
   await attachPendingArraysToNote(noteId, pendingImageDataUrls, pendingFileAttachments);
   pendingImageDataUrls = [];
   pendingFileAttachments = [];
-}
-
-/** Use AI to pick a folder for this note only; ignores other moveNote steps in the response. */
-async function fileNoteWithAi(noteId) {
-  const id = Number(noteId);
-  if (!Number.isFinite(id) || id < 1) return;
-  const userMessage = [
-    `Organize exactly one note: id ${id}. It may be unfiled or new; use its preview text in the snapshot.`,
-    'Choose the best matching folder from snapshot.folders, or add one createFolder then move this note there.',
-    'Your plan must include exactly one moveNote for this note id and must not move any other note.',
-  ].join(' ');
-  let res;
-  try {
-    res = await window.mvp.organizeChat({ userMessage, history: [] });
-  } catch {
-    return;
-  }
-  if (!res || res.error || !Array.isArray(res.plan)) return;
-  const filtered = res.plan.filter((step) => {
-    if (step && step.op === 'createFolder') return true;
-    if (step && step.op === 'moveNote' && Number(step.noteId) === id) return true;
-    return false;
-  });
-  if (!filtered.some((s) => s && s.op === 'moveNote')) return;
-  try {
-    await window.mvp.applyOrganizePlan(filtered);
-  } catch {
-    /* note stays saved; filing is best-effort */
-  }
 }
 
 async function buildSavePayloadFromDraft() {
@@ -231,10 +194,12 @@ async function buildSavePayloadFromDraft() {
   }
 
   const folderValue = captureFolderSelect?.value || 'unfiled';
+  const organizeHint = organizeHintInput ? organizeHintInput.value.trim() : '';
   return {
     saveText,
     appRaw,
     folderValue,
+    organizeHint,
     images: [...pendingImageDataUrls],
     files: pendingFileAttachments.map((f) => ({
       dataUrl: f.dataUrl,
@@ -249,47 +214,19 @@ async function runCaptureSavePipeline(payload) {
   const note = await window.mvp.saveCapture(payload.saveText, appKey);
   if (!note?.id) return;
   await attachPendingArraysToNote(note.id, payload.images, payload.files);
+  const hint = String(payload.organizeHint || '').trim();
+  if (hint) await window.mvp.setOrganizeHint(note.id, hint);
   await applyManualFolder(note.id, payload.folderValue);
-  await maybeAiFileNote(note.id, payload.folderValue);
 }
 
-async function submitReminderWorkflow() {
-  const text = input.value.trim();
-  if (!text) {
-    setWorkflowStatus('Type what the reminder should do.', true);
-    return;
-  }
-  captureBusy = true;
-  setWorkflowStatus('Running workflow…');
-  try {
-    const result = await window.mvp.runCaptureWorkflow(text);
-    if (!result || result.error) {
-      setWorkflowStatus(result?.error || 'Workflow failed.', true);
-      return;
-    }
-    const noteId = result.note?.id;
-    if (noteId) {
-      const folderValue = captureFolderSelect?.value || 'unfiled';
-      await applyManualFolder(noteId, folderValue);
-      await maybeAiFileNote(noteId, folderValue);
-      if (result.appQuery) appInput.value = result.appQuery;
-    }
-    resetCaptureForm();
-    setCaptureMode('note', { focusInput: false });
-    pendingImageDataUrls = [];
-    pendingFileAttachments = [];
-    window.mvp.hideCapture();
-  } finally {
-    captureBusy = false;
-  }
+async function finishCaptureAfterSave() {
+  resetCaptureForm();
+  pendingImageDataUrls = [];
+  pendingFileAttachments = [];
+  window.mvp.hideCapture();
 }
 
-async function submit() {
-  if (captureBusy) return;
-  if (captureMode === 'reminder') {
-    await submitReminderWorkflow();
-    return;
-  }
+async function submitPlainNote() {
   const payload = await buildSavePayloadFromDraft();
   if (!payload) {
     window.mvp.hideCapture();
@@ -298,23 +235,88 @@ async function submit() {
   captureBusy = true;
   try {
     await runCaptureSavePipeline(payload);
-    resetCaptureForm();
-    pendingImageDataUrls = [];
-    pendingFileAttachments = [];
-    window.mvp.hideCapture();
+    await finishCaptureAfterSave();
   } finally {
     captureBusy = false;
   }
 }
 
-async function handleEscape() {
-  if (captureMode === 'reminder') {
-    resetCaptureForm();
+async function submitWorkflow() {
+  const text = input.value.trim();
+  if (!text) {
+    setWorkflowStatus('Type what you want to remember.', true);
+    return;
+  }
+  captureBusy = true;
+  setWorkflowStatus('Linking to app…');
+  try {
+    const result = await window.mvp.runCaptureWorkflow(text);
+    if (!result || result.error) {
+      setWorkflowStatus(result?.error || 'Could not set up reminder.', true);
+      return;
+    }
+    const noteId = result.note?.id;
+    if (noteId) {
+      const folderValue = captureFolderSelect?.value || 'unfiled';
+      await applyManualFolder(noteId, folderValue);
+      if (result.appQuery) appInput.value = result.appQuery;
+    }
+    await finishCaptureAfterSave();
+  } finally {
+    captureBusy = false;
+  }
+}
+
+async function submitTimeReminder(parsed) {
+  captureBusy = true;
+  setWorkflowStatus(`Scheduling for ${parsed.label}…`);
+  try {
+    const note = await window.mvp.saveCapture(parsed.reminderText, '');
+    if (!note?.id) {
+      setWorkflowStatus('Could not save reminder.', true);
+      return;
+    }
+    await window.mvp.setResurfaceAt(note.id, parsed.resurface_at);
+    const folderValue = captureFolderSelect?.value || 'unfiled';
+    await applyManualFolder(note.id, folderValue);
+    setWorkflowStatus(`Scheduled: ${parsed.label}`);
+    await new Promise((r) => setTimeout(r, 700));
+    await finishCaptureAfterSave();
+  } finally {
+    captureBusy = false;
+  }
+}
+
+async function submit() {
+  if (captureBusy) return;
+
+  const raw = input.value.trim();
+  if (!raw && !hasPendingAttachments()) {
     window.mvp.hideCapture();
     return;
   }
+
+  // App-open workflow takes priority
+  if (!hasPendingAttachments() && shouldRunWorkflow(raw, appInput.value)) {
+    await submitWorkflow();
+    return;
+  }
+
+  // Time reminder (P1)
+  if (!hasPendingAttachments() && looksLikeTimeReminder(raw)) {
+    const parsed = await window.mvp.parseTimeReminder(raw);
+    if (parsed) {
+      await submitTimeReminder(parsed);
+      return;
+    }
+  }
+
+  await submitPlainNote();
+}
+
+async function handleEscape() {
   const hasText = input.value.trim().length > 0;
-  const hasPending = pendingImageDataUrls.length > 0 || pendingFileAttachments.length > 0;
+  const hasPending = hasPendingAttachments();
   if (!hasText && !hasPending) {
     resetCaptureForm();
     window.mvp.hideCapture();
@@ -364,25 +366,27 @@ appInput.addEventListener('keydown', async (event) => {
   }
 });
 
-modeNoteBtn?.addEventListener('click', () => setCaptureMode('note'));
-modeReminderBtn?.addEventListener('click', () => enterReminderMode());
-modeReminderBtn?.addEventListener('contextmenu', (event) => {
-  event.preventDefault();
-  enterReminderMode();
+window.__jotFlushCapture = async () => {
+  const payload = await buildSavePayloadFromDraft();
+  if (!payload) return { ok: false };
+  await runCaptureSavePipeline(payload);
+  return { ok: true };
+};
+
+window.mvp.onCaptureLoadDraft((draft) => {
+  if (!draft) return;
+  input.value = String(draft.text || '');
+  if (organizeHintInput) organizeHintInput.value = String(draft.organizeHint || '');
 });
 
 window.mvp.onCaptureFocus(() => {
   void loadCaptureFolders();
-  if (captureMode === 'note') {
-    input.focus();
-    input.select();
-  } else {
-    input.focus();
-  }
+  input.focus();
+  input.select();
 });
 
 void loadCaptureFolders();
-setCaptureMode('note', { focusInput: true });
+input.focus();
 
 input.addEventListener('paste', async (event) => {
   const items = [...(event.clipboardData?.items || [])];
@@ -398,7 +402,6 @@ input.addEventListener('paste', async (event) => {
   const fileFiles = files.filter((f) => extFromFileName(f.name));
 
   if (imageFiles.length === 0 && fileFiles.length === 0) {
-    // Fall back to Electron's native clipboard for screenshots and browser-copied images
     const dataUrl = await window.mvp.readClipboardImage().catch(() => null);
     if (dataUrl) {
       event.preventDefault();
@@ -457,7 +460,6 @@ attachImageBtn?.addEventListener('click', async () => {
       await window.mvp.addNoteImagesFromPicker(note.id);
       await attachPendingToNote(note.id);
       await applyManualFolder(note.id);
-      await maybeAiFileNote(note.id);
     }
   } finally {
     captureBusy = false;
@@ -487,7 +489,6 @@ attachFileBtn?.addEventListener('click', async () => {
       await window.mvp.addNoteFilesFromPicker(note.id);
       await attachPendingToNote(note.id);
       await applyManualFolder(note.id);
-      await maybeAiFileNote(note.id);
     }
   } finally {
     captureBusy = false;

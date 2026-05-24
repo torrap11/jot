@@ -42,9 +42,9 @@ function pickSurfacedNotes({ bundleId, appName, db, catalog, limit = 3, recentTr
   const appKey = resolveAppKey(bundleId, appName);
   if (!appKey) return { appKey: '', notes: [] };
 
-  const linked = db.getNotesLinkedToApp(appKey, 80).map((n) => ({ ...n, sourceRank: 2 }));
+  const linked = db.getNotesLinkedToApp(appKey, 80).map((n) => ({ ...n, sourceRank: 2, _whySrc: 'same_app' }));
   const keywordAliases = aliasesForApp(appKey, catalog);
-  const keywordMatches = db.getKeywordCandidates(keywordAliases, 80).map((n) => ({ ...n, sourceRank: 1 }));
+  const keywordMatches = db.getKeywordCandidates(keywordAliases, 80).map((n) => ({ ...n, sourceRank: 1, _whySrc: 'keyword_match' }));
 
   const merged = new Map();
   [...linked, ...keywordMatches].forEach((note) => {
@@ -53,7 +53,7 @@ function pickSurfacedNotes({ bundleId, appName, db, catalog, limit = 3, recentTr
   });
 
   // Multi-app transition boost: notes linked to recently visited apps score higher
-  const transitionSet = new Set(recentTransitions);
+  const transitionSet = new Set((recentTransitions || []).filter(Boolean));
 
   const filtered = [...merged.values()]
     .filter((note) => db.canSurfaceNote(note.id, appKey))
@@ -61,8 +61,22 @@ function pickSurfacedNotes({ bundleId, appName, db, catalog, limit = 3, recentTr
       const analyticsBonus = db.getNoteSurfaceScore(note.id, appKey);
       const timeBonus = getTimeOfDayBonus(note);
       const recencyBonus = getRecencyBonus(note);
-      const totalScore = note.sourceRank + analyticsBonus + timeBonus + recencyBonus;
-      return { ...note, _totalScore: totalScore };
+
+      // Transition bonus: note linked to any recently visited app
+      let transitionBonus = 0;
+      if (transitionSet.size > 0) {
+        const noteLinks = typeof db.getLinksForNote === 'function' ? db.getLinksForNote(note.id) : [];
+        if (noteLinks.some((k) => transitionSet.has(k))) transitionBonus = 0.2;
+      }
+
+      // Build whyNow activity tags
+      const whyNow = [note._whySrc];
+      if (timeBonus > 0) whyNow.push('time_of_day');
+      if (recencyBonus >= 0.4) whyNow.push('recency');
+      if (transitionBonus > 0) whyNow.push('recent_transition');
+
+      const totalScore = note.sourceRank + analyticsBonus + timeBonus + recencyBonus + transitionBonus;
+      return { ...note, _totalScore: totalScore, whyNow };
     })
     .sort((a, b) => b._totalScore - a._totalScore)
     .slice(0, limit);

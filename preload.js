@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('mvp', {
   recentNotes: (folderId) => ipcRenderer.invoke('notes:recent', folderId),
   getNote: (noteId) => ipcRenderer.invoke('note:get', noteId),
   updateNote: (noteId, text) => ipcRenderer.invoke('note:update', noteId, text),
+  setOrganizeHint: (noteId, hint) => ipcRenderer.invoke('note:set-organize-hint', noteId, hint),
+  organizeNoteFromHint: (payload) => ipcRenderer.invoke('ai:organize-note-from-hint', payload),
   setNoteFolder: (noteId, folderId) => ipcRenderer.invoke('note:set-folder', noteId, folderId),
   deleteNote: (noteId) => ipcRenderer.invoke('note:delete', noteId),
   deleteNotes: (noteIds) => ipcRenderer.invoke('note:delete-many', noteIds),
@@ -56,6 +58,7 @@ contextBridge.exposeInMainWorld('mvp', {
   openSearch: (payload) => ipcRenderer.send('window:show-search', payload),
   openCapture: () => ipcRenderer.send('window:show-capture'),
   onCaptureFocus: (cb) => ipcRenderer.on('capture:focus', () => cb()),
+  onCaptureLoadDraft: (cb) => ipcRenderer.on('capture:load-draft', (_e, draft) => cb(draft || {})),
   onSearchFocus: (cb) => ipcRenderer.on('search:focus', (_event, payload) => cb(payload || {})),
   onNotesChanged: (cb) => ipcRenderer.on('notes-changed', () => cb()),
   onOpenAiKeyModal: (cb) => ipcRenderer.on('ai:key:open-modal', () => cb()),
@@ -70,4 +73,20 @@ contextBridge.exposeInMainWorld('mvp', {
   addParticipant: (noteId, participant) => ipcRenderer.invoke('participants:add', noteId, participant),
   removeParticipant: (noteId, participant) => ipcRenderer.invoke('participants:remove', noteId, participant),
   quickCaptureMeetingNote: (text, participant) => ipcRenderer.invoke('meeting:quick-capture', text, participant),
+
+  // Screenpipe memory UX (Phase 3)
+  screenpipeSearch: (params) => ipcRenderer.invoke('screenpipe:search', params),
+  screenpipeMemories: (params) => ipcRenderer.invoke('screenpipe:memories', params),
+  screenpipeEngineState: () => ipcRenderer.invoke('screenpipe:engine-state'),
+  toggleScreenpipeCapture: () => ipcRenderer.invoke('screenpipe:toggle-capture'),
+  onEngineStateChanged: (cb) => ipcRenderer.on('engine:state-changed', () => cb()),
+  onRecallManualResult: (cb) => ipcRenderer.on('recall:manual-result', (_e, payload) => cb(payload || {})),
+
+  // Time resurfacing (P1)
+  parseTimeReminder: (text) => ipcRenderer.invoke('capture:parse-time-reminder', text),
+  setResurfaceAt: (noteId, isoStr) => ipcRenderer.invoke('notes:set-resurface-at', noteId, isoStr),
+
+  // Pakr agent (P2)
+  pakraChat: (payload) => ipcRenderer.invoke('pakra:chat', payload),
+  onSwitchTab: (cb) => ipcRenderer.on('search:switch-tab', (_e, tab) => cb(tab)),
 });

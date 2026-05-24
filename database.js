@@ -413,6 +413,15 @@ function migrateLegacy() {
     database.exec('ALTER TABLE notes ADD COLUMN folder_id INTEGER');
   }
 
+  const colsAfter = database.pragma('table_info(notes)').map((c) => c.name);
+  if (!colsAfter.includes('organize_hint')) {
+    database.exec('ALTER TABLE notes ADD COLUMN organize_hint TEXT');
+  }
+  if (!colsAfter.includes('resurface_at')) {
+    database.exec('ALTER TABLE notes ADD COLUMN resurface_at TEXT');
+    database.exec('CREATE INDEX IF NOT EXISTS idx_notes_resurface_at ON notes(resurface_at) WHERE resurface_at IS NOT NULL');
+  }
+
   const linkCols = database.pragma('table_info(note_app_links)').map((c) => c.name);
   if (linkCols.includes('bundle_id') && !linkCols.includes('app_key')) {
     database.exec("ALTER TABLE note_app_links ADD COLUMN app_key TEXT");
@@ -512,12 +521,21 @@ function createDraftNote() {
 }
 
 function updateNote(id, text) {
-  const value = normalizeText(text);
-  if (!value) return null;
+  const value = String(text ?? '').trim();
   getDb()
     .prepare("UPDATE notes SET text = ?, updated_at = datetime('now') WHERE id = ?")
     .run(value, id);
   return getNote(id);
+}
+
+function setNoteOrganizeHint(id, hint) {
+  const nid = Number(id);
+  if (!Number.isFinite(nid) || nid < 1) return null;
+  const value = String(hint ?? '').trim();
+  getDb()
+    .prepare("UPDATE notes SET organize_hint = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(value || null, nid);
+  return getNote(nid);
 }
 
 function deleteNote(id) {
@@ -673,7 +691,11 @@ function completeNote(id) {
 }
 
 function getNote(id) {
-  return getDb().prepare('SELECT id, text, created_at, folder_id FROM notes WHERE id = ?').get(id) || null;
+  return (
+    getDb()
+      .prepare('SELECT id, text, created_at, folder_id, organize_hint FROM notes WHERE id = ?')
+      .get(id) || null
+  );
 }
 
 function parseFolderFilter(folderId) {
@@ -1244,6 +1266,35 @@ function snoozeNote(noteId, appKey, minutes) {
     .run(until, noteId, appKey);
 }
 
+function setResurfaceAt(noteId, isoStr) {
+  const id = Number(noteId);
+  if (!Number.isFinite(id)) return null;
+  const iso = isoStr ? String(isoStr) : null;
+  const row = getDb()
+    .prepare('UPDATE notes SET resurface_at = ? WHERE id = ? RETURNING *')
+    .get(iso, id);
+  return row || null;
+}
+
+function clearResurfaceAt(noteId) {
+  const id = Number(noteId);
+  if (!Number.isFinite(id)) return;
+  getDb().prepare('UPDATE notes SET resurface_at = NULL WHERE id = ?').run(id);
+}
+
+function getDueResurfaceNotes() {
+  return getDb()
+    .prepare(
+      `SELECT id, text, resurface_at, created_at FROM notes
+       WHERE resurface_at IS NOT NULL
+         AND resurface_at <= datetime('now')
+         AND completed_at IS NULL
+       ORDER BY resurface_at ASC
+       LIMIT 5`
+    )
+    .all();
+}
+
 function dismissNote(noteId, appKey) {
   upsertSurfaceState(noteId, appKey);
   getDb()
@@ -1345,6 +1396,7 @@ module.exports = {
   createNote,
   createDraftNote,
   updateNote,
+  setNoteOrganizeHint,
   deleteNote,
   deleteNotes,
   deduplicateNotesByTextAndCreatedAt,
@@ -1389,4 +1441,7 @@ module.exports = {
   removeParticipantFromNote,
   snoozeNote,
   dismissNote,
+  setResurfaceAt,
+  clearResurfaceAt,
+  getDueResurfaceNotes,
 };

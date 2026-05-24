@@ -19,4 +19,13 @@ contextBridge.exposeInMainWorld('overlay', {
   openNote: (noteId) => ipcRenderer.send('overlay-open-note', noteId),
   dismissAll: () => ipcRenderer.send('overlay-dismiss-all'),
   runCommand: (payload) => ipcRenderer.invoke('overlay:run-command', payload),
+
+  // Recall card IPC (Phase 2+)
+  onRecallSurface: (cb) =>
+    ipcRenderer.on('recall:surface', (_e, payload) => {
+      cb(payload || {});
+    }),
+  recallDismiss: (eventId) => ipcRenderer.send('recall:dismiss', eventId),
+  recallSnooze: (eventId, minutes) => ipcRenderer.send('recall:snooze', eventId, minutes),
+  recallNeverApp: (eventId) => ipcRenderer.send('recall:never-app', eventId),
 });

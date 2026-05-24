@@ -1,7 +1,7 @@
 {
-  "name": "jot",
-  "version": "2.0.0",
-  "description": "Jot — local-first notes with proactive surfacing (Jot Launch / v2)",
+  "name": "pakrai",
+  "version": "2.1.0",
+  "description": "PakrAI — local-first notes with screen recording, proactive resurfacing, and Pakr agent",
   "main": "app-main.js",
   "scripts": {
     "start": "electron .",
@@ -13,25 +13,39 @@
     "dist:universal": "npm run clean:dist && electron-builder --mac --universal --publish never",
     "dist:signed": "npm run clean:dist && electron-builder --mac --universal --publish never --config.mac.identity=\"Developer ID Application\"",
     "dist:notarized": "npm run dist:signed",
+    "preflight": "bash scripts/preflight-ship.sh",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.jot.app",
-    "productName": "Jot",
+    "appId": "com.pakrai.app",
+    "productName": "PakrAI",
     "files": [
       "app-main.js",
       "preload.js",
       "database.js",
       "appWatcher.js",
       "surfaceEngine.js",
+      "recallWatcher.js",
       "noteAppScan.js",
       "knownApps.js",
       "remindWorkflowParser.js",
       "noteCleanup.js",
       "aiOrganize.js",
+      "captureWorkflow.js",
+      "overlayCommand.js",
+      "timeParser.js",
+      "resurfaceScheduler.js",
+      "pakr/**/*",
       "renderer/**/*",
       "overlay/**/*",
       "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../proactive-recall/target/release/screenpipe",
+        "to": "screenpipe",
+        "filter": ["**/*"]
+      }
     ],
     "asarUnpack": [
       "**/node_modules/better-sqlite3/**/*"
@@ -43,18 +57,20 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "artifactName": "Jot-${version}.${ext}",
+      "artifactName": "PakrAI-${version}.${ext}",
       "target": [
         "dmg",
         "zip"
       ],
       "extendInfo": {
-        "NSAppleEventsUsageDescription": "Jot reads the frontmost application to surface relevant notes."
+        "NSAppleEventsUsageDescription": "PakrAI reads the frontmost application to surface relevant notes.",
+        "NSScreenCaptureUsageDescription": "PakrAI captures your screen to let you search and recall what you have seen.",
+        "NSAutomationDescription": "PakrAI uses Automation to read the currently active app name for note surfacing."
       }
     },
     "dmg": {
-      "title": "Install Jot",
-      "artifactName": "Jot-${version}.${ext}",
+      "title": "Install PakrAI",
+      "artifactName": "PakrAI-${version}.${ext}",
       "window": {
         "width": 540,
         "height": 380
