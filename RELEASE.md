@@ -12,7 +12,7 @@ npm run dist:arm64    # Apple Silicon
 # npm run dist:universal
 ```
 
-Artifact: `dist/PakrAI-<version>.dmg`
+Artifact: `dist/PakrAI-<version>.dmg` — latest: [v2.1.1](https://github.com/parthha12/PakrAI/releases/tag/v2.1.1)
 
 ## Install
 
