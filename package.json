@@ -1,6 +1,6 @@
 {
   "name": "pakrai",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "PakrAI — local-first notes with screen recording, proactive resurfacing, and Pakr agent",
   "main": "app-main.js",
   "scripts": {
@@ -36,6 +36,7 @@
       "timeParser.js",
       "resurfaceScheduler.js",
       "pakr/**/*",
+      "integration/**/*",
       "renderer/**/*",
       "overlay/**/*",
       "node_modules/**/*"
@@ -64,7 +65,7 @@
       ],
       "extendInfo": {
         "NSAppleEventsUsageDescription": "PakrAI reads the frontmost application to surface relevant notes.",
-        "NSScreenCaptureUsageDescription": "PakrAI captures your screen to let you search and recall what you have seen.",
+        "NSScreenCaptureUsageDescription": "PakrAI records your laptop screen locally so you can search what you have seen. It does not use your microphone or camera.",
         "NSAutomationDescription": "PakrAI uses Automation to read the currently active app name for note surfacing."
       }
     },

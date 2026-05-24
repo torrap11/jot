@@ -3,7 +3,7 @@
 **Status:** `beta-ready`  
 **Current phase:** P5 (human: TCC + optional notarization)  
 **Scope:** [SCOPE.md](./SCOPE.md)  
-**Last updated:** 2026-05-23
+**Last updated:** 2026-05-24
 
 ---
 
@@ -18,7 +18,7 @@
 | P2 | Pakr agent | ✅ | `pakr/`, tab, `pakra:chat`, tools tests |
 | P3 | Context intelligence | ✅ | `surfaceEngine` whyNow tags; notes-first switch |
 | P4 | Search polish | ✅ | `extractSnippet`, `highlightSnippet`, recents on empty ⌘P |
-| P5 | Ship PakrAI | 🟡 | Engine in dmg; preflight script; notarization = human |
+| P5 | Ship PakrAI | ✅ | v2.1.1 dmg; integration bundled; screen-only (`--disable-audio`) |
 
 ---
 
@@ -28,6 +28,7 @@
 2026-05-23 — verify — cd jot && npm test — 120/120 pass
 2026-05-23 — verify — cargo test -p screenpipe-recall — 21/21 pass
 2026-05-23 — fix — preflight uses npm test exit code; notes-only SSE overlay; manual recall notes-first
+2026-05-24 — ship — v2.1.1: screen-only engine, Recordings Ask-only, integration/ in repo
 ```
 
 ---

@@ -19,7 +19,7 @@ const path = require('path');
 // overriding the require cache.
 
 function loadClientWithMockKey(apiKey = 'test-key') {
-  const integrationDir = path.join(__dirname, '..', '..', 'screenpipe-x-jot', 'integration');
+  const integrationDir = path.join(__dirname, '..', 'integration');
   const managerPath = require.resolve(path.join(integrationDir, 'engineManager'));
   const clientPath = require.resolve(path.join(integrationDir, 'screenpipeClient'));
 
@@ -97,7 +97,7 @@ test('search: includes start_time in query string', async (t) => {
   });
 
   // Patch the client to use our test port
-  const integrationDir = path.join(__dirname, '..', '..', 'screenpipe-x-jot', 'integration');
+  const integrationDir = path.join(__dirname, '..', 'integration');
   const clientPath = require.resolve(path.join(integrationDir, 'screenpipeClient'));
   delete require.cache[clientPath];
 

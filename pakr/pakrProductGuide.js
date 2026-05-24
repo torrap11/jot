@@ -10,7 +10,7 @@
 
 const PAKR_PRODUCT_GUIDE = `
 ## What PakrAI is
-Local-first macOS app: notes while you work, screen recording (for search only), proactive note resurfacing, and Pakr (this chat) for reorganizing notes or answering how-to questions.
+Local-first macOS app: notes while you work, continuous **laptop screen** recording (no microphone), proactive note resurfacing, and Pakr (this chat) for reorganizing notes or answering how-to questions.
 
 ## Five things you can do
 1. **Capture** — save notes (⌘N)
@@ -30,7 +30,7 @@ Local-first macOS app: notes while you work, screen recording (for search only),
 
 ## Main window tabs
 - **Notes** — library, folders, editor, ⌘P search
-- **Recordings** — **Search** (keyword over screen OCR) and **Ask** (notes + screen hits; optional LLM summarization via API)
+- **Recordings** — **Ask** (question over notes + screen history; blended results)
 - **Pakr** — this agent: product help OR note reorganization
 
 ## Capture workflows (in capture or compose)
@@ -45,9 +45,10 @@ Local-first macOS app: notes while you work, screen recording (for search only),
 - **Manual recall (⌘⇧R)** when you want a check now without switching apps
 
 ## Permissions (macOS)
-- **Screen Recording** — required for Recordings search/ask and engine
+- **Screen Recording** — continuous laptop screen capture (not microphone)
 - **Automation** — frontmost app for resurfacing
 - **Accessibility** — recommended for richer context
+- **Microphone** — not used by PakrAI
 
 ## API key
 - **File → Anthropic API Key…** — needed for Pakr chat, Organize note, Clean DB AI steps

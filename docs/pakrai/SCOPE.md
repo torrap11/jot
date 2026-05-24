@@ -11,7 +11,7 @@
 | 1 | **Capture notes** | Write notes while working (⌘N, library, folders, attachments) |
 | 2 | **Understand notes** | Local index on note text + metadata for search and resurfacing |
 | 3 | **Search notes** | Fast ⌘P + library |
-| 4 | **Screen recording** | Continuous local desktop capture (Screenpipe engine) while PakrAI runs |
+| 4 | **Screen recording** | Continuous **laptop screen** capture only (no mic, no camera) while PakrAI runs |
 | 5 | **Query recordings** | Search and ask questions over what was on screen (text/OCR index)—on demand, not on every app switch |
 | 6 | **Resurface — time** | NL schedule → note comes back at that time |
 | 7 | **Resurface — context** | Right **note** when work context matches (app, links, tags); overlay stays note-first |

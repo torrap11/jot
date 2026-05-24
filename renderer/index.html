@@ -27,7 +27,7 @@
     <!-- Notes panel (existing) -->
     <div id="notes-panel" class="tab-panel" role="tabpanel" aria-labelledby="">
       <div class="search-toolbar">
-        <input id="query" type="search" placeholder="Search notes, screen, and audio…" autofocus />
+        <input id="query" type="search" placeholder="Search notes and screen history…" autofocus />
         <button type="button" id="cleanup-notes-btn" title="Deduplicate notes and optionally run AI merge (with API key)">
           Clean DB
         </button>
@@ -36,7 +36,6 @@
         <button class="chip active" data-scope="all" type="button">All</button>
         <button class="chip" data-scope="notes" type="button">Notes</button>
         <button class="chip" data-scope="screen" type="button">Screen</button>
-        <button class="chip" data-scope="audio" type="button">Audio</button>
       </div>
       <p id="unified-search-status" class="panel-status unified-search-status hidden" aria-live="polite"></p>
       <div id="unified-capture-results" class="capture-results unified-capture-results hidden" role="list"></div>
@@ -102,39 +101,10 @@
       </div>
     </div>
 
-    <!-- Recordings panel — search + ask over captured screen history -->
+    <!-- Recordings panel — ask over notes + screen history -->
     <div id="recordings-panel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-recordings">
 
-      <!-- Mode toggle: Search / Ask -->
-      <div class="recordings-modes" role="group" aria-label="Recordings mode">
-        <button class="rec-mode-btn active" id="rec-mode-search" data-mode="search" type="button">Search</button>
-        <button class="rec-mode-btn" id="rec-mode-ask" data-mode="ask" type="button">Ask</button>
-      </div>
-
-      <!-- Search pane -->
-      <div id="rec-search-pane" class="rec-pane">
-        <div class="rewind-toolbar">
-          <input id="rec-query" type="search" placeholder="Search screen history…" />
-          <input id="rec-app-filter" type="text" class="rec-app-filter" placeholder="App…" title="Filter by app name" aria-label="App name filter" />
-          <select id="rec-time-range" aria-label="Time range">
-            <option value="2h ago">Last 2h</option>
-            <option value="24h ago">Last 24h</option>
-            <option value="7d ago">Last 7 days</option>
-            <option value="30d ago">Last 30 days</option>
-          </select>
-          <button id="rec-search-btn" type="button">Search</button>
-        </div>
-        <div class="content-type-chips" id="rec-type-chips" role="group" aria-label="Content type">
-          <button class="chip active" data-type="all" type="button">All</button>
-          <button class="chip" data-type="accessibility" type="button">Screen</button>
-          <button class="chip" data-type="audio" type="button">Audio</button>
-        </div>
-        <p id="rec-search-status" class="panel-status" aria-live="polite"></p>
-        <div id="rec-search-results" class="capture-results" role="list"></div>
-      </div>
-
-      <!-- Ask pane -->
-      <div id="rec-ask-pane" class="rec-pane hidden">
+      <div id="rec-ask-pane" class="rec-pane">
         <div class="ask-toolbar">
           <input id="rec-ask-query" type="text" placeholder="What were you working on?" />
           <button id="rec-ask-btn" type="button">Ask</button>

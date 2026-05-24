@@ -42,10 +42,21 @@ const resurfaceScheduler = require('./resurfaceScheduler');
 const { runPakrAgent } = require('./pakr/pakrAgent');
 
 // Integration: screenpipe engine sidecar + recall client + screenpipe search.
-// SCREENPIPE_INTEGRATION_PATH overrides default workspace-relative resolution.
-const _integrationDir =
-  process.env.SCREENPIPE_INTEGRATION_PATH ||
-  path.join(__dirname, '..', 'screenpipe-x-jot', 'integration');
+function resolveIntegrationDir() {
+  if (process.env.SCREENPIPE_INTEGRATION_PATH) {
+    return process.env.SCREENPIPE_INTEGRATION_PATH;
+  }
+  const candidates = [
+    path.join(__dirname, 'integration'),
+    path.join(__dirname, '..', 'screenpipe-x-jot', 'integration'),
+    path.join(__dirname, '..', 'integration'),
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'engineManager.js'))) return dir;
+  }
+  return candidates[0];
+}
+const _integrationDir = resolveIntegrationDir();
 let engineManager = null;
 let recallClient = null;
 let screenpipeClient = null;
@@ -1262,7 +1273,7 @@ function buildAppMenu() {
           },
         },
         {
-          label: 'Screen & Audio Recording',
+          label: 'Screen Recording',
           type: 'checkbox',
           checked: engineManager ? engineManager.getCaptureEnabled() : false,
           enabled: !!engineManager,

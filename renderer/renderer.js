@@ -702,8 +702,7 @@ const unifiedCaptureEl = document.getElementById('unified-capture-results');
 
 function contentTypeForUnifiedScope(scope) {
   if (scope === 'screen') return 'accessibility';
-  if (scope === 'audio') return 'audio';
-  return 'all';
+  return 'accessibility';
 }
 
 function shouldShowNotesForScope() {
@@ -716,11 +715,20 @@ function shouldRunUnifiedCaptureSearch(text) {
   return true;
 }
 
+function isScreenCaptureItem(item) {
+  const type = String(item?.type || '').toLowerCase();
+  if (type === 'audio') return false;
+  return type === 'ocr' || type === 'ui' || type === 'accessibility' || !type;
+}
+
+function resultItemsScreenOnly(items) {
+  return (items || []).filter(isScreenCaptureItem);
+}
+
 const UNIFIED_QUERY_PLACEHOLDERS = {
-  all: 'Search notes, screen, and audio…',
+  all: 'Search notes and screen history…',
   notes: 'Search notes…',
   screen: 'Search screen history…',
-  audio: 'Search audio transcripts…',
 };
 
 function updateUnifiedScopeChrome() {
@@ -748,10 +756,8 @@ async function runUnifiedCaptureSearch(text) {
   unifiedCaptureEl.classList.remove('hidden');
   unifiedStatusEl.classList.remove('hidden');
   unifiedStatusEl.textContent = browsing
-    ? unifiedSearchScope === 'audio'
-      ? 'Loading recent audio…'
-      : 'Loading recent screen captures…'
-    : 'Searching screen & audio…';
+    ? 'Loading recent screen captures…'
+    : 'Searching screen history…';
   unifiedCaptureEl.innerHTML = '';
 
   const [searchResult, memResult] = await Promise.all([
@@ -783,8 +789,11 @@ async function runUnifiedCaptureSearch(text) {
   }
 
   if (searchResult.ok) {
-    const items = searchResult.data || [];
-    items.forEach((item) => cards.push(renderCaptureResult(item)));
+    const items = resultItemsScreenOnly(searchResult.data || []);
+    items.forEach((item) => {
+      const card = renderCaptureResult(item);
+      if (card) cards.push(card);
+    });
   } else if (searchResult.error === 'screenpipe client not loaded') {
     unifiedStatusEl.textContent = 'Screen history: engine offline.';
     return;
@@ -793,13 +802,13 @@ async function runUnifiedCaptureSearch(text) {
   if (cards.length === 0) {
     unifiedStatusEl.textContent = browsing
       ? 'No recent captures in the last 7 days — type keywords to search.'
-      : 'No screen or audio matches.';
+      : 'No screen matches.';
     return;
   }
 
   unifiedStatusEl.textContent = browsing
-    ? `${cards.length} recent ${unifiedSearchScope === 'audio' ? 'audio' : 'screen'} (7d) — type to narrow`
-    : `${cards.length} from screen & audio`;
+    ? `${cards.length} recent screen capture${cards.length === 1 ? '' : 's'} (7d) — type to narrow`
+    : `${cards.length} from screen history`;
   cards.forEach((card) => unifiedCaptureEl.appendChild(card));
 }
 
@@ -856,14 +865,14 @@ function highlightSnippet(snippetText, query) {
 
 function renderResults() {
   if (!shouldShowNotesForScope()) {
-    const label = unifiedSearchScope === 'audio' ? 'Audio' : 'Screen';
-    resultsEl.innerHTML = `<div class="empty">${label} results appear above. Type in the search box to filter.</div>`;
+    resultsEl.innerHTML =
+      '<div class="empty">Screen results appear above. Type in the search box to filter.</div>';
     return;
   }
   if (state.notes.length === 0) {
     const q = queryInput.value.trim();
     if (q && unifiedSearchScope !== 'notes') {
-      resultsEl.innerHTML = '<div class="empty">No notes — see screen/audio above.</div>';
+      resultsEl.innerHTML = '<div class="empty">No notes — see screen history above.</div>';
     } else {
       resultsEl.innerHTML = '<div class="empty">No notes found.</div>';
     }
@@ -1819,7 +1828,7 @@ function switchTab(name) {
     queryInput.focus();
   } else if (isRecordings) {
     void syncRecordingsOfflineState();
-    document.getElementById('rec-query')?.focus();
+    document.getElementById('rec-ask-query')?.focus();
   } else if (isPakr) {
     document.getElementById('pakr-input')?.focus();
   }
@@ -1970,14 +1979,10 @@ async function pollEngineState() {
     setEngineStatus(normalized);
     if (!recordingsPanel.classList.contains('hidden')) {
       const offlineEl = document.getElementById('rec-offline');
-      const searchPane = document.getElementById('rec-search-pane');
       const askPane = document.getElementById('rec-ask-pane');
-      const modeBar = document.querySelector('.recordings-modes');
       const offline = normalized === 'offline';
       if (offlineEl) offlineEl.classList.toggle('hidden', !offline);
-      if (searchPane) searchPane.classList.toggle('hidden', offline || recActiveMode !== 'search');
-      if (askPane) askPane.classList.toggle('hidden', offline || recActiveMode !== 'ask');
-      if (modeBar) modeBar.classList.toggle('hidden', offline);
+      if (askPane) askPane.classList.toggle('hidden', offline);
     }
   } catch {
     setEngineStatus('offline');
@@ -2021,51 +2026,20 @@ if (window.mvp.onRecallManualResult) {
   });
 }
 
-// ── Recordings panel — Search + Ask over screen history ──────────────────
-
-let recActiveType = 'all';
-let recActiveMode = 'search';
+// ── Recordings panel — Ask over notes + screen history ───────────────────
 
 function syncRecordingsOfflineState() {
   return window.mvp.screenpipeEngineState().then(({ state }) => {
     const offline = state === 'offline' || !state;
     const offlineEl = document.getElementById('rec-offline');
-    const searchPane = document.getElementById('rec-search-pane');
     const askPane = document.getElementById('rec-ask-pane');
-    const modeBar = document.querySelector('.recordings-modes');
     if (offlineEl) offlineEl.classList.toggle('hidden', !offline);
-    if (searchPane) searchPane.classList.toggle('hidden', offline || recActiveMode !== 'search');
-    if (askPane) askPane.classList.toggle('hidden', offline || recActiveMode !== 'ask');
-    if (modeBar) modeBar.classList.toggle('hidden', offline);
+    if (askPane) askPane.classList.toggle('hidden', offline);
   }).catch(() => {
     document.getElementById('rec-offline')?.classList.remove('hidden');
-    document.getElementById('rec-search-pane')?.classList.add('hidden');
     document.getElementById('rec-ask-pane')?.classList.add('hidden');
   });
 }
-
-function switchRecMode(mode) {
-  recActiveMode = mode;
-  document.querySelectorAll('.rec-mode-btn').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.mode === mode);
-  });
-  document.getElementById('rec-search-pane').classList.toggle('hidden', mode !== 'search');
-  document.getElementById('rec-ask-pane').classList.toggle('hidden', mode !== 'ask');
-  if (mode === 'search') document.getElementById('rec-query')?.focus();
-  else document.getElementById('rec-ask-query')?.focus();
-}
-
-document.querySelectorAll('.rec-mode-btn').forEach((btn) => {
-  btn.addEventListener('click', () => switchRecMode(btn.dataset.mode));
-});
-
-document.querySelectorAll('#rec-type-chips .chip').forEach((chip) => {
-  chip.addEventListener('click', () => {
-    document.querySelectorAll('#rec-type-chips .chip').forEach((c) => c.classList.remove('active'));
-    chip.classList.add('active');
-    recActiveType = chip.dataset.type;
-  });
-});
 
 function formatTimestamp(ts) {
   if (!ts) return '';
@@ -2092,6 +2066,7 @@ function buildCaptureCard({ badgeClass, badgeLabel, appName, timestamp, snippet 
 
 function renderCaptureResult(item) {
   const type = String(item.type || '').toLowerCase();
+  if (type === 'audio') return null;
   const c = item.content || {};
   if (type === 'ocr' || type === 'ui' || type === 'accessibility') {
     return buildCaptureCard({
@@ -2102,15 +2077,6 @@ function renderCaptureResult(item) {
       snippet: c.text || c.content || '',
     });
   }
-  if (type === 'audio') {
-    return buildCaptureCard({
-      badgeClass: 'audio',
-      badgeLabel: 'Audio',
-      appName: c.speaker ? `Speaker: ${c.speaker.name || 'unknown'}` : '',
-      timestamp: formatTimestamp(c.timestamp),
-      snippet: c.transcription || '',
-    });
-  }
   return buildCaptureCard({
     badgeClass: 'screen',
     badgeLabel: type || 'Capture',
@@ -2119,45 +2085,6 @@ function renderCaptureResult(item) {
     snippet: c.text || c.transcription || JSON.stringify(c).slice(0, 200),
   });
 }
-
-async function runRecordingsSearch() {
-  const statusEl = document.getElementById('rec-search-status');
-  const resultsEl = document.getElementById('rec-search-results');
-  const q = document.getElementById('rec-query').value.trim();
-  const startTime = document.getElementById('rec-time-range').value;
-  const appName = document.getElementById('rec-app-filter').value.trim();
-
-  statusEl.textContent = 'Searching…';
-  resultsEl.innerHTML = '';
-
-  const params = { q, start_time: startTime, content_type: recActiveType, limit: 20 };
-  if (appName) params.app_name = appName;
-
-  const result = await window.mvp.screenpipeSearch(params);
-
-  if (!result.ok) {
-    const engineOffline =
-      result.error === 'screenpipe client not loaded' ||
-      result.error?.includes('ECONNREFUSED') ||
-      result.error?.includes('timeout');
-    statusEl.textContent = engineOffline
-      ? 'Recording engine is offline — start it from the status button above.'
-      : `Search error: ${result.error}`;
-    if (engineOffline) void syncRecordingsOfflineState();
-    return;
-  }
-
-  const items = result.data || [];
-  statusEl.textContent = items.length === 0
-    ? (q ? 'No results for that query.' : 'No recordings yet.')
-    : `${items.length} result${items.length === 1 ? '' : 's'}`;
-  items.forEach((item) => resultsEl.appendChild(renderCaptureResult(item)));
-}
-
-document.getElementById('rec-search-btn').addEventListener('click', () => void runRecordingsSearch());
-document.getElementById('rec-query').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') void runRecordingsSearch();
-});
 
 // ── Recordings Ask — NL query over screen memories + OCR captures ─────────
 
@@ -2226,19 +2153,19 @@ async function runRecordingsAsk() {
   }
 
   if (captureResult.ok) {
-    (captureResult.data || []).slice(0, 4).forEach((item) => {
-      const c = item.content || {};
-      const type = String(item.type || '').toLowerCase();
-      const isScreen = type === 'ocr' || type === 'ui' || type === 'accessibility';
-      cards.push(buildAskResultCard({
-        badgeLabel: isScreen ? 'Screen' : (type === 'audio' ? 'Audio' : 'Capture'),
-        badgeClass: isScreen ? 'screen' : 'audio',
-        snippet: c.text || c.content || c.transcription || '',
-        timestamp: c.timestamp ? formatTimestamp(c.timestamp) : '',
-        appName: c.app_name || c.app || '',
-        source: 'recording',
-      }));
-    });
+    resultItemsScreenOnly(captureResult.data || [])
+      .slice(0, 4)
+      .forEach((item) => {
+        const c = item.content || {};
+        cards.push(buildAskResultCard({
+          badgeLabel: 'Screen',
+          badgeClass: 'screen',
+          snippet: c.text || c.content || '',
+          timestamp: c.timestamp ? formatTimestamp(c.timestamp) : '',
+          appName: c.app_name || c.app || '',
+          source: 'recording',
+        }));
+      });
   }
 
   if (cards.length === 0) {
