@@ -27,18 +27,11 @@
     <!-- Notes panel (existing) -->
     <div id="notes-panel" class="tab-panel" role="tabpanel" aria-labelledby="">
       <div class="search-toolbar">
-        <input id="query" type="search" placeholder="Search notes and screen history…" autofocus />
+        <input id="query" type="search" placeholder="Search notes…" autofocus />
         <button type="button" id="cleanup-notes-btn" title="Deduplicate notes and optionally run AI merge (with API key)">
           Clean DB
         </button>
       </div>
-      <div class="content-type-chips unified-search-chips" id="unified-type-chips" role="group" aria-label="Search scope">
-        <button class="chip active" data-scope="all" type="button">All</button>
-        <button class="chip" data-scope="notes" type="button">Notes</button>
-        <button class="chip" data-scope="screen" type="button">Screen</button>
-      </div>
-      <p id="unified-search-status" class="panel-status unified-search-status hidden" aria-live="polite"></p>
-      <div id="unified-capture-results" class="capture-results unified-capture-results hidden" role="list"></div>
       <p id="cleanup-status" class="cleanup-status cleanup-status--hidden" role="status" aria-live="polite"></p>
       <section id="folder-diagram" class="folder-diagram" aria-label="Folder structure diagram">
         <div class="folder-diagram-header">
@@ -108,15 +101,17 @@
       </div>
     </div>
 
-    <!-- Recordings panel — ask over notes + screen history -->
+    <!-- Recordings panel — screen capture timeline + Ask -->
     <div id="recordings-panel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-recordings">
 
       <div id="rec-ask-pane" class="rec-pane">
         <div class="ask-toolbar">
-          <input id="rec-ask-query" type="text" placeholder="What were you working on?" />
+          <input id="rec-ask-query" type="text" placeholder="Search or ask about your screen history…" />
           <button id="rec-ask-btn" type="button">Ask</button>
         </div>
-        <p id="rec-ask-status" class="panel-status" aria-live="polite"></p>
+        <p id="rec-status" class="panel-status" aria-live="polite"></p>
+        <div id="rec-timeline" class="capture-results" role="list"></div>
+        <p id="rec-ask-status" class="panel-status hidden" aria-live="polite"></p>
         <div id="rec-ask-results" class="capture-results" role="list"></div>
       </div>
 

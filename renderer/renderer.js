@@ -694,27 +694,6 @@ newFolderModal?.addEventListener('click', (event) => {
   if (event.target === newFolderModal) hideNewFolderModal();
 });
 
-let unifiedSearchScope = 'all';
-let unifiedCaptureTimer = null;
-
-const unifiedStatusEl = document.getElementById('unified-search-status');
-const unifiedCaptureEl = document.getElementById('unified-capture-results');
-
-function contentTypeForUnifiedScope(scope) {
-  if (scope === 'screen') return 'accessibility';
-  return 'accessibility';
-}
-
-function shouldShowNotesForScope() {
-  return unifiedSearchScope === 'all' || unifiedSearchScope === 'notes';
-}
-
-function shouldRunUnifiedCaptureSearch(text) {
-  if (unifiedSearchScope === 'notes') return false;
-  if (!text && unifiedSearchScope === 'all') return false;
-  return true;
-}
-
 function isScreenCaptureItem(item) {
   const type = String(item?.type || '').toLowerCase();
   if (type === 'audio') return false;
@@ -725,107 +704,11 @@ function resultItemsScreenOnly(items) {
   return (items || []).filter(isScreenCaptureItem);
 }
 
-const UNIFIED_QUERY_PLACEHOLDERS = {
-  all: 'Search notes and screen history…',
-  notes: 'Search notes…',
-  screen: 'Search screen history…',
-};
-
-function updateUnifiedScopeChrome() {
-  const notesScope = unifiedSearchScope === 'notes';
-  document.getElementById('folder-diagram')?.classList.toggle('hidden', !notesScope);
-  if (queryInput) {
-    queryInput.placeholder =
-      UNIFIED_QUERY_PLACEHOLDERS[unifiedSearchScope] || UNIFIED_QUERY_PLACEHOLDERS.all;
-  }
-  updateBulkActionsUi();
-}
-
-async function runUnifiedCaptureSearch(text) {
-  if (!unifiedCaptureEl || !unifiedStatusEl) return;
-
-  if (!shouldRunUnifiedCaptureSearch(text)) {
-    unifiedCaptureEl.innerHTML = '';
-    unifiedCaptureEl.classList.add('hidden');
-    unifiedStatusEl.classList.add('hidden');
-    unifiedStatusEl.textContent = '';
-    return;
-  }
-
-  const browsing = !text;
-  unifiedCaptureEl.classList.remove('hidden');
-  unifiedStatusEl.classList.remove('hidden');
-  unifiedStatusEl.textContent = browsing
-    ? 'Loading recent screen captures…'
-    : 'Searching screen history…';
-  unifiedCaptureEl.innerHTML = '';
-
-  const [searchResult, memResult] = await Promise.all([
-    window.mvp.screenpipeSearch({
-      q: text,
-      start_time: '7d ago',
-      content_type: contentTypeForUnifiedScope(unifiedSearchScope),
-      limit: browsing ? 15 : 12,
-    }),
-    text && unifiedSearchScope === 'all'
-      ? window.mvp.screenpipeMemories({ q: text, limit: 5 })
-      : Promise.resolve({ ok: false }),
-  ]);
-
-  const cards = [];
-
-  if (memResult.ok && unifiedSearchScope === 'all') {
-    const mems = Array.isArray(memResult.data) ? memResult.data : [];
-    mems.forEach((mem) => {
-      const card = buildCaptureCard({
-        badgeClass: 'memory',
-        badgeLabel: 'Memory',
-        appName: '',
-        timestamp: formatTimestamp(mem.created_at),
-        snippet: mem.content || '',
-      });
-      cards.push(card);
-    });
-  }
-
-  if (searchResult.ok) {
-    const items = resultItemsScreenOnly(searchResult.data || []);
-    items.forEach((item) => {
-      const card = renderCaptureResult(item);
-      if (card) cards.push(card);
-    });
-  } else if (searchResult.error === 'screenpipe client not loaded') {
-    unifiedStatusEl.textContent = 'Screen history: engine offline.';
-    return;
-  }
-
-  if (cards.length === 0) {
-    unifiedStatusEl.textContent = browsing
-      ? 'No recent captures in the last 7 days — type keywords to search.'
-      : 'No screen matches.';
-    return;
-  }
-
-  unifiedStatusEl.textContent = browsing
-    ? `${cards.length} recent screen capture${cards.length === 1 ? '' : 's'} (7d) — type to narrow`
-    : `${cards.length} from screen history`;
-  cards.forEach((card) => unifiedCaptureEl.appendChild(card));
-}
-
-function scheduleUnifiedCaptureSearch(text) {
-  clearTimeout(unifiedCaptureTimer);
-  unifiedCaptureTimer = setTimeout(() => void runUnifiedCaptureSearch(text), 400);
-}
-
 async function runQuery(text) {
   state.isDefaultList = !text;
-  updateUnifiedScopeChrome();
-  const showNotes = shouldShowNotesForScope();
-  state.notes = !showNotes
-    ? []
-    : text
-      ? await window.mvp.queryNotes(text, state.folderFilter)
-      : await window.mvp.recentNotes(state.folderFilter);
+  state.notes = text
+    ? await window.mvp.queryNotes(text, state.folderFilter)
+    : await window.mvp.recentNotes(state.folderFilter);
   const validIds = new Set(state.notes.map((n) => n.id));
   state.selectedIds = new Set([...state.selectedIds].filter((id) => validIds.has(id)));
   if (state.listFocusId != null && !state.notes.some((n) => n.id === state.listFocusId)) {
@@ -834,7 +717,6 @@ async function runQuery(text) {
   renderResults();
   updateBulkActionsUi();
   await refreshFolderDiagram();
-  scheduleUnifiedCaptureSearch(text);
 }
 
 /**
@@ -864,18 +746,8 @@ function highlightSnippet(snippetText, query) {
 }
 
 function renderResults() {
-  if (!shouldShowNotesForScope()) {
-    resultsEl.innerHTML =
-      '<div class="empty">Screen results appear above. Type in the search box to filter.</div>';
-    return;
-  }
   if (state.notes.length === 0) {
-    const q = queryInput.value.trim();
-    if (q && unifiedSearchScope !== 'notes') {
-      resultsEl.innerHTML = '<div class="empty">No notes — see screen history above.</div>';
-    } else {
-      resultsEl.innerHTML = '<div class="empty">No notes found.</div>';
-    }
+    resultsEl.innerHTML = '<div class="empty">No notes found.</div>';
     return;
   }
   const sameLocalDay = state.notes.every(
@@ -1835,7 +1707,8 @@ function switchTab(name) {
     queryInput.focus();
   } else if (isRecordings) {
     void syncRecordingsOfflineState();
-    document.getElementById('rec-ask-query')?.focus();
+    const askInput = document.getElementById('rec-ask-query');
+    if (askInput) askInput.focus();
   }
 }
 
@@ -1852,15 +1725,7 @@ window.mvp.onSwitchTab((tab) => switchTab(tab));
 
 // Pakr is now a separate window — see pakr.html / pakr-renderer.js
 
-document.querySelectorAll('#unified-type-chips .chip').forEach((chip) => {
-  chip.addEventListener('click', () => {
-    document.querySelectorAll('#unified-type-chips .chip').forEach((c) => c.classList.remove('active'));
-    chip.classList.add('active');
-    unifiedSearchScope = chip.dataset.scope || 'all';
-    updateUnifiedScopeChrome();
-    void runQuery(queryInput.value.trim());
-  });
-});
+// Unified scope chips removed — Notes is notes-only; screen is on Recordings tab.
 
 // Engine status badge + recording toggle
 const engineToggleBtn = document.getElementById('engine-toggle');
@@ -1946,7 +1811,7 @@ if (window.mvp.onRecallManualResult) {
   });
 }
 
-// ── Recordings panel — Ask over notes + screen history ───────────────────
+// ── Recordings panel — screen capture timeline + Ask ─────────────────────
 
 function syncRecordingsOfflineState() {
   return window.mvp.screenpipeEngineState().then(({ state }) => {
@@ -1955,9 +1820,44 @@ function syncRecordingsOfflineState() {
     const askPane = document.getElementById('rec-ask-pane');
     if (offlineEl) offlineEl.classList.toggle('hidden', !offline);
     if (askPane) askPane.classList.toggle('hidden', offline);
+    if (!offline) void loadRecordingsTimeline();
   }).catch(() => {
     document.getElementById('rec-offline')?.classList.remove('hidden');
     document.getElementById('rec-ask-pane')?.classList.add('hidden');
+  });
+}
+
+async function loadRecordingsTimeline() {
+  const timelineEl = document.getElementById('rec-timeline');
+  const statusEl = document.getElementById('rec-status');
+  if (!timelineEl || !statusEl) return;
+
+  statusEl.textContent = 'Loading recent screen captures…';
+  timelineEl.innerHTML = '';
+
+  const result = await window.mvp.screenpipeSearch({
+    q: '',
+    start_time: '7d ago',
+    limit: 20,
+  });
+
+  if (!result.ok) {
+    statusEl.textContent = result.error === 'screenpipe client not loaded'
+      ? 'Screen history: engine offline.'
+      : 'Could not load screen history.';
+    return;
+  }
+
+  const items = resultItemsScreenOnly(result.data || []);
+  if (items.length === 0) {
+    statusEl.textContent = 'No screen captures in the last 7 days.';
+    return;
+  }
+
+  statusEl.textContent = `${items.length} recent screen capture${items.length === 1 ? '' : 's'} (7d)`;
+  items.forEach((item) => {
+    const card = renderCaptureResult(item);
+    if (card) timelineEl.appendChild(card);
   });
 }
 
@@ -2036,8 +1936,14 @@ async function runRecordingsAsk() {
 
   if (!q) return;
 
+  statusEl.classList.remove('hidden');
   statusEl.textContent = 'Searching…';
   resultsEl.innerHTML = '';
+
+  const timelineStatus = document.getElementById('rec-status');
+  const timelineEl = document.getElementById('rec-timeline');
+  if (timelineStatus) timelineStatus.textContent = '';
+  if (timelineEl) timelineEl.innerHTML = '';
 
   const [noteResult, memResult, captureResult] = await Promise.all([
     window.mvp.queryNotes(q, null),
