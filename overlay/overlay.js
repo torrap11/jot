@@ -182,7 +182,7 @@ window.overlay.onShow((payload) => {
 
   restartProgressAnimation();
 
-  document.getElementById('header-app').textContent = payload.appName || 'PakrAI';
+  document.getElementById('header-app').textContent = payload.appName || 'Pakr Notes';
   document.getElementById('header-label').textContent = '· relevant notes';
 
   const container = document.getElementById('notes-container');
@@ -253,7 +253,7 @@ window.overlay.onRecallSurface((payload) => {
 
   restartProgressAnimation();
 
-  document.getElementById('header-app').textContent = payload.appName || 'PakrAI';
+  document.getElementById('header-app').textContent = payload.appName || 'Pakr Notes';
   document.getElementById('header-label').textContent = '· screen recall';
 
   const container = document.getElementById('notes-container');

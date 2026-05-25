@@ -23,7 +23,7 @@ function buildCleanupSnapshot(database, noteLimit = 350, textMax = 900) {
   return { folders: folders.map((f) => ({ id: f.id, name: f.name })), notes };
 }
 
-const CLEANUP_SYSTEM = `You help deduplicate and reorganize notes in the app "PakrAI". Notes are meant to capture ideas and concepts — wording may differ while the idea repeats.
+const CLEANUP_SYSTEM = `You help deduplicate and reorganize notes in the app "Pakr Notes". Notes are meant to capture ideas and concepts — wording may differ while the idea repeats.
 
 You receive JSON: "folders" [{id, name}] and "notes" [{id, text, folder}]. Propose a minimal, safe cleanup.
 

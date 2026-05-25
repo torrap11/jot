@@ -494,7 +494,7 @@ function createSearchWindow() {
     width: 800,
     height: 700,
     show: false,
-    title: 'PakrAI',
+    title: 'Pakr Notes',
     minimizable: true,
     maximizable: true,
     ...macHiddenInsetChrome(),
@@ -771,7 +771,7 @@ function showTimeResurfaceOverlay(note) {
 
   const payload = {
     appKey: '__scheduled__',
-    appName: 'PakrAI',
+    appName: 'Pakr Notes',
     notes: [{
       id: note.id,
       text: note.text,
@@ -917,7 +917,7 @@ async function importExistingDbFromMenu() {
         type: 'info',
         title: 'Database Imported',
         message: 'Database imported successfully.',
-        detail: 'PakrAI will restart to load the imported database.',
+        detail: 'Pakr Notes will restart to load the imported database.',
       });
       app.relaunch();
       app.exit(0);
@@ -1110,7 +1110,7 @@ async function maybeShowFirstLaunchChoice() {
   const parentWindow = searchWin || captureWin || null;
   const result = await dialog.showMessageBox(parentWindow, {
     type: 'question',
-    title: 'Welcome to PakrAI',
+    title: 'Welcome to Pakr Notes',
     message: 'How do you want to start?',
     detail: 'Start with a blank database, or import an existing database file now.',
     buttons: ['Start Fresh', 'Import Existing DB...'],
@@ -1134,7 +1134,7 @@ async function maybePromptFirstLaunchApiKeySetup(hadFirstLaunchOnboarding) {
     type: 'question',
     title: 'Set up AI organization',
     message: 'Do you want to set your Anthropic API key now?',
-    detail: 'PakrAI uses it for manual organization (Organize note, Clean DB). New notes stay Unfiled until you file them yourself or run those tools. Skip and add a key later via Engine menu or File → Anthropic API Key…',
+    detail: 'Pakr Notes uses it for manual organization (Organize note, Clean DB). New notes stay Unfiled until you file them yourself or run those tools. Skip and add a key later via Engine menu or File → Anthropic API Key…',
     buttons: ['Set API Key Now', 'Later'],
     defaultId: 0,
     cancelId: 1,
@@ -1378,7 +1378,7 @@ function startRecallStream() {
       }
       return;
     }
-    // PakrAI: proactive overlay is notes-first (surfaceEngine). Engine capture cards only via manual recall.
+    // Pakr Notes: proactive overlay is notes-first (surfaceEngine). Engine capture cards only via manual recall.
     if (ev.event_type === 'recall.surface') return;
   });
   console.log('[recall] SSE stream subscribed');
@@ -1941,7 +1941,7 @@ function registerIpc() {
       const history = Array.isArray(payload && payload.history) ? payload.history : [];
       const message = String((payload && payload.message) || '').trim();
       if (!message) return { reply: 'No message provided.', history };
-      const logDir = path.join(app.getPath('home'), 'Library', 'Logs', 'PakrAI');
+      const logDir = path.join(app.getPath('home'), 'Library', 'Logs', 'Pakr Notes');
       const logFile = path.join(logDir, 'pakr-agent.log');
       const result = await runPakrAgent(db, {
         history,

@@ -1,29 +1,29 @@
-# Install PakrAI on macOS
+# Install Pakr Notes on macOS
 
-PakrAI is a local-first macOS app: notes, screen recording query, proactive resurfacing, and the Pakr agent. No account, no telemetry.
+Pakr Notes is a local-first macOS app: notes, screen recording query, proactive resurfacing, and the Pakr agent. No account, no telemetry.
 
-This build is **ad-hoc signed**, so the first launch may need one extra step. After that it runs normally.
+> **Note:** Pakr Notes is not yet notarized with an Apple Developer ID. macOS will flag the app as unverified. Use the terminal command below to bypass this until we ship a notarized build.
 
 ---
 
 ## 60-second install
 
-1. Download `PakrAI-2.1.0.dmg` from the [latest release](https://github.com/parthha12/PakrAI/releases/latest).
-2. Open the `.dmg` and drag **PakrAI** into **Applications**.
+1. Download `PakrNotes-2.2.0.dmg` from the [latest release](https://github.com/parthha12/PakrAI/releases/latest).
+2. Open the `.dmg` and drag **Pakr Notes** into **Applications**.
 3. In Terminal:
 
    ```bash
-   xattr -dr com.apple.quarantine /Applications/PakrAI.app
+   xattr -cr "/Applications/Pakr Notes.app"
    ```
 
-4. Open **PakrAI** from Applications.
+4. Open **Pakr Notes** from Applications.
 
 ---
 
 ## No-Terminal install
 
-1. Download the `.dmg`, drag **PakrAI** to Applications.
-2. Right-click **PakrAI** → **Open** → **Open**.
+1. Download the `.dmg`, drag **Pakr Notes** to Applications.
+2. Right-click **Pakr Notes** → **Open** → **Open**.
 3. If blocked: **System Settings → Privacy & Security → Open Anyway**.
 
 ---
@@ -41,8 +41,10 @@ This build is **ad-hoc signed**, so the first launch may need one extra step. Af
 **"Damaged and can't be opened"**
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/PakrAI.app
+xattr -cr "/Applications/Pakr Notes.app"
 ```
+
+This is expected until we ship a notarized build with an Apple Developer ID. The command strips the macOS quarantine flag so the app can open normally.
 
 **Data location**
 
@@ -50,7 +52,7 @@ xattr -dr com.apple.quarantine /Applications/PakrAI.app
 
 **Uninstall**
 
-Trash PakrAI.app; optional: `rm -rf ~/Library/Application\ Support/pakrai`
+Trash Pakr Notes.app; optional: `rm -rf ~/Library/Application\ Support/pakrai`
 
 ---
 

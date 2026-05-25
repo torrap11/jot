@@ -1,7 +1,7 @@
 {
   "name": "pakrai",
   "version": "2.2.0",
-  "description": "PakrAI — local-first notes with screen recording, proactive resurfacing, and Pakr agent",
+  "description": "Pakr Notes — local-first notes with screen recording, proactive resurfacing, and Pakr agent",
   "main": "app-main.js",
   "scripts": {
     "start": "electron .",
@@ -18,7 +18,7 @@
   },
   "build": {
     "appId": "com.pakrai.app",
-    "productName": "PakrAI",
+    "productName": "Pakr Notes",
     "files": [
       "app-main.js",
       "preload.js",
@@ -58,20 +58,20 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "artifactName": "PakrAI-${version}.${ext}",
+      "artifactName": "PakrNotes-${version}.${ext}",
       "target": [
         "dmg",
         "zip"
       ],
       "extendInfo": {
-        "NSAppleEventsUsageDescription": "PakrAI reads the frontmost application to surface relevant notes.",
-        "NSScreenCaptureUsageDescription": "PakrAI records your laptop screen locally so you can search what you have seen. It does not use your microphone or camera.",
-        "NSAutomationDescription": "PakrAI uses Automation to read the currently active app name for note surfacing."
+        "NSAppleEventsUsageDescription": "Pakr Notes reads the frontmost application to surface relevant notes.",
+        "NSScreenCaptureUsageDescription": "Pakr Notes records your laptop screen locally so you can search what you have seen. It does not use your microphone or camera.",
+        "NSAutomationDescription": "Pakr Notes uses Automation to read the currently active app name for note surfacing."
       }
     },
     "dmg": {
-      "title": "Install PakrAI",
-      "artifactName": "PakrAI-${version}.${ext}",
+      "title": "Install Pakr Notes",
+      "artifactName": "PakrNotes-${version}.${ext}",
       "window": {
         "width": 540,
         "height": 380
