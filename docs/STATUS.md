@@ -1,25 +1,26 @@
-# Project status — 2026-05-23
+# Project status — 2026-05-25
 
-## PakrAI (product)
+## Jot (product)
 
 | Check | Result |
 |-------|--------|
-| Spec | `docs/pakrai/` |
-| `npm test` (jot) | 120/120 |
-| `cargo test -p screenpipe-recall` | 21/21 |
-| Progress | `docs/pakrai/PAKRAI_PROGRESS.md` → **beta-ready** |
-| Manual QA | `docs/pakrai/manual-qa.md` |
+| Spec | `docs/jot/` |
+| `npm test` (jot) | 30/30 |
+| Progress | `docs/jot/JOT_PROGRESS.md` → **beta-ready** |
+| Manual QA | `docs/jot/manual-qa.md` |
 
 ### Run
 
 ```bash
-cd screenpipe-x-jot
-./scripts/run-dev.sh
+cd jot
+npm install
+npm start
 ```
 
 ### Human-only
 
-- macOS TCC for PakrAI (Screen Recording, Automation, Accessibility)
+- macOS TCC for Jot (Automation, Accessibility)
+- Screen Recording engine: 🚧 under construction
 - Optional: notarization + `build/icon.icns`
 
 ---
@@ -30,4 +31,3 @@ cd screenpipe-x-jot
 |-------|--------|
 | `screenpipe` binary | `proactive-recall/target/release/screenpipe` |
 | Scripts | `run-dev.sh`, `verify-stack.sh`, `build-engine.sh` |
-| Claude Code phases 0–4 | `docs/claude-code/CLAUDE_PROGRESS.md` |

@@ -1,8 +1,8 @@
-# PakrAI — build instructions
+# Jot — build instructions
 
-**Product:** PakrAI · **Agent:** Pakr  
+**Product:** Jot · **Agent:** Jot  
 
-**In scope:** notes · **screen recording** · **query recordings** · resurfacing · Pakr reorg  
+**In scope:** notes · **screen recording** · **query recordings** · resurfacing · Jot reorg  
 **Out (v1):** microphone, camera  
 
 Start: [SCOPE.md](./SCOPE.md) · **Claude Code:** paste [CLAUDE-CODE-PROMPT.md](./CLAUDE-CODE-PROMPT.md)
@@ -25,7 +25,7 @@ Start: [SCOPE.md](./SCOPE.md) · **Claude Code:** paste [CLAUDE-CODE-PROMPT.md](
 | 9 | [DEV-SETUP.md](./DEV-SETUP.md) |
 | 10 | [RESURFACING.md](./RESURFACING.md) |
 | 11 | [NOTES-AND-SEARCH.md](./NOTES-AND-SEARCH.md) |
-| 12 | [PAKR-AGENT.md](./PAKR-AGENT.md) |
+| 12 | [JOT-AI-AGENT.md](./JOT-AI-AGENT.md) |
 | 13 | [manual-qa.md](./manual-qa.md) |
 
 ---

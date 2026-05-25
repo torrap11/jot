@@ -1,4 +1,4 @@
-# PakrAI — architecture
+# Jot — architecture
 
 **Scope:** [SCOPE.md](./SCOPE.md)
 
@@ -8,9 +8,9 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  PakrAI (Electron — jot/)                                        │
+│  Jot (Electron — jot/)                                        │
 │  ┌──────────┐ ┌──────────┐ ┌─────────────┐ ┌─────────────────┐ │
-│  │ Notes    │ │ ⌘P search│ │ Recordings  │ │ Pakr agent      │ │
+│  │ Notes    │ │ ⌘P search│ │ Recordings  │ │ Jot agent      │ │
 │  │ ⌘N       │ │ library  │ │ search/ask  │ │ (notes reorg)   │ │
 │  └────┬─────┘ └────┬─────┘ └──────┬──────┘ └────────┬────────┘ │
 │       │            │              │                   │          │
@@ -38,10 +38,10 @@
 
 | Path | Role |
 |------|------|
-| `jot/` | Product UI: notes, overlay, recordings query, Pakr |
+| `jot/` | Product UI: notes, overlay, recordings query, Jot |
 | `integration/` | Engine lifecycle, `screenpipeClient`, recall client |
 | `proactive-recall/` | Engine binary, capture DB, optional `screenpipe-recall` |
-| `docs/pakrai/` | Spec |
+| `docs/jot/` | Spec |
 
 ---
 
@@ -78,10 +78,10 @@ May use engine for **optional** context signals later; v1 overlay = notes.
 NL time → resurface_at → scheduler → overlay
 ```
 
-### Pakr agent
+### Jot agent
 
 ```
-User → Pakr → tools on notes DB only
+User → Jot → tools on notes DB only
 ```
 
 ---
@@ -93,7 +93,7 @@ User → Pakr → tools on notes DB only
 | `mvp:*` / `capture:*` | Notes |
 | `screenpipe:*` | **Query recordings** (search, memories, engine state) |
 | `recall:*` | Proactive recall (if using Rust policy) |
-| `pakra:*` | Pakr agent |
+| `jota:*` | Jot agent |
 
 ---
 
@@ -104,7 +104,7 @@ User → Pakr → tools on notes DB only
 3. **No LLM on proactive overlay path.**  
 4. **Screen Recording permission required** for query feature.  
 5. **No microphone** in v1.  
-6. Engine default **on** for PakrAI (`SCREENPIPE_ENABLED` true unless dev override).
+6. Engine default **on** for Jot (`SCREENPIPE_ENABLED` true unless dev override).
 
 ---
 

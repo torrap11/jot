@@ -1,4 +1,4 @@
-# PakrAI — query screen recordings
+# Jot — query screen recordings
 
 **Scope:** [SCOPE.md](./SCOPE.md). Screen recording is **in**; microphone/camera are **out**.
 
@@ -6,7 +6,7 @@
 
 ## Purpose
 
-PakrAI records the screen locally so you can **look up what you were doing** when a note is not enough. This is **intentional retrieval**—not the same as proactive note resurfacing.
+Jot records the screen locally so you can **look up what you were doing** when a note is not enough. This is **intentional retrieval**—not the same as proactive note resurfacing.
 
 **User stories:**
 
@@ -16,7 +16,7 @@ PakrAI records the screen locally so you can **look up what you were doing** whe
 
 ---
 
-## UX (PakrAI shell)
+## UX (Jot shell)
 
 Expose as a clear surface in the main app—not buried dev tabs:
 
@@ -26,7 +26,7 @@ Expose as a clear surface in the main app—not buried dev tabs:
 | **Recordings ask** | NL question → ranked spans from capture (+ optional LLM synthesis); cite time/app | P1 |
 | **Status** | Recording on/off, engine health dot | P0 |
 
-**Naming in UI:** “Recordings” or “Screen query”—not “Screenpipe.” Legacy **Rewind** / **Ask** tabs in `jot/renderer/` are the starting implementation; rebrand and polish for PakrAI P0/P6.
+**Naming in UI:** “Recordings” or “Screen query”—not “Screenpipe.” Legacy **Rewind** / **Ask** tabs in `jot/renderer/` are the starting implementation; rebrand and polish for Jot P0/P6.
 
 **Shortcuts (suggested):** ⌘⇧F focus recordings search; keep existing patterns if already wired.
 

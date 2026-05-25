@@ -1,6 +1,6 @@
-# START — PakrAI build orchestrator
+# START — Jot build orchestrator
 
-Read [SCOPE.md](./SCOPE.md) first. PakrAI includes **notes + screen recording + query recordings**; not mic/camera.
+Read [SCOPE.md](./SCOPE.md) first. Jot includes **notes + screen recording + query recordings**; not mic/camera.
 
 ---
 
@@ -29,7 +29,7 @@ cd jot && npm test
 
 ## Phases
 
-**P0** branding · **P6** query recordings · **P1** time · **P2** Pakr · **P3–P5** polish/ship
+**P0** branding · **P6** query recordings · **P1** time · **P2** Jot · **P3–P5** polish/ship
 
 **Do not** remove engine or Rewind/Ask in P0—**rebrand** in P6.
 

@@ -1,4 +1,4 @@
-# PakrAI — notes and search
+# Jot — notes and search
 
 ---
 
@@ -24,6 +24,6 @@ Implementation today: **Rewind** + **Ask** tabs → rebrand in phase **P6**.
 
 ---
 
-## Pakr agent
+## Jot AI agent
 
 Reorganizes **notes only**—not a replacement for recordings query.

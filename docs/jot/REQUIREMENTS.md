@@ -1,6 +1,6 @@
-# PakrAI — requirements
+# Jot — requirements
 
-**Scope:** [SCOPE.md](./SCOPE.md). Prefixes: **P** product, **N** notes, **Q** query recordings, **R** resurfacing, **A** Pakr, **C** context.
+**Scope:** [SCOPE.md](./SCOPE.md). Prefixes: **P** product, **N** notes, **Q** query recordings, **R** resurfacing, **A** Jot, **C** context.
 
 ---
 
@@ -8,7 +8,7 @@
 
 | ID | Requirement | Pri |
 |----|-------------|-----|
-| P1 | PakrAI / Pakr branding | P0 |
+| P1 | Jot / Jot branding | P0 |
 | P2 | Single `.dmg` bundles notes app + engine | P1 |
 | P3 | Onboarding: Screen Recording + Automation (+ Accessibility recommended) | P0 |
 | P4 | Recording status visible; engine health in UI | P0 |
@@ -61,13 +61,13 @@ See [QUERY-RECORDINGS.md](./QUERY-RECORDINGS.md).
 
 ---
 
-## A — Pakr agent (notes only)
+## A — Jot AI agent (notes only)
 
 | ID | Requirement | Pri |
 |----|-------------|-----|
-| A1–A6 | Pakr panel; notes DB tools; confirm; no hot path | per PAKR-AGENT.md |
+| A1–A6 | Jot panel; notes DB tools; confirm; no hot path | per JOT-AI-AGENT.md |
 
-Query recordings uses **Recordings ask**, not Pakr, unless later merged by design.
+Query recordings uses **Recordings ask**, not Jot, unless later merged by design.
 
 ---
 
@@ -109,4 +109,4 @@ Query recordings uses **Recordings ask**, not Pakr, unless later merged by desig
 | Query | `integration/screenpipeClient.js`, `renderer.js` Rewind/Ask |
 | Engine | `integration/engineManager.js`, `proactive-recall/target/release/screenpipe` |
 | Overlay | `jot/overlay/`, `recallWatcher.js` |
-| Pakr | `jot/pakr/` (new) |
+| Jot | `jot/jot/` (new) |

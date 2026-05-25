@@ -1,4 +1,4 @@
-# PakrAI build progress
+# Jot build progress
 
 **Status:** `beta-ready`  
 **Current phase:** P5 (human: TCC + optional notarization)  
@@ -12,13 +12,13 @@
 | Phase | Name | Status | Exit verified |
 |-------|------|--------|---------------|
 | — | Legacy 0–4 (Jot × Screenpipe) | ✅ | `docs/claude-code/CLAUDE_PROGRESS.md` |
-| P0 | Product identity + keep recording | ✅ | PakrAI strings; engine auto-start |
+| P0 | Product identity + keep recording | ✅ | Jot strings; engine auto-start |
 | P6 | Query screen recordings | ✅ | Recordings tab; search + ask + citations |
 | P1 | Time resurfacing | ✅ | `timeParser.js`, `resurfaceScheduler.js`, DB columns |
-| P2 | Pakr agent | ✅ | `pakr/`, tab, `pakra:chat`, tools tests |
+| P2 | Jot AI agent | ✅ | `jot/`, tab, `jota:chat`, tools tests |
 | P3 | Context intelligence | ✅ | `surfaceEngine` whyNow tags; notes-first switch |
 | P4 | Search polish | ✅ | `extractSnippet`, `highlightSnippet`, recents on empty ⌘P |
-| P5 | Ship PakrAI | ✅ | v2.1.1 dmg; integration bundled; screen-only (`--disable-audio`) |
+| P5 | Ship Jot | ✅ | v2.1.1 dmg; integration bundled; screen-only (`--disable-audio`) |
 
 ---
 
@@ -41,9 +41,9 @@ jot/app-main.js
 jot/appWatcher.js
 jot/aiOrganize.js
 jot/noteCleanup.js
-docs/pakrai/manual-qa.md
-docs/pakrai/PAKRAI_PROGRESS.md
-docs/pakrai/PHASES.md
+docs/jot/manual-qa.md
+docs/jot/JOT_PROGRESS.md
+docs/jot/PHASES.md
 docs/STATUS.md
 ```
 
@@ -61,7 +61,7 @@ docs/STATUS.md
 
 ## Blockers (human-only)
 
-- [ ] macOS TCC: Screen Recording, Automation, Accessibility for PakrAI.app
+- [ ] macOS TCC: Screen Recording, Automation, Accessibility for Jot.app
 - [ ] Optional: `build/icon.icns` + notarized release
 
 ---

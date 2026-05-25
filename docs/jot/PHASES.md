@@ -1,4 +1,4 @@
-# PakrAI — implementation phases
+# Jot — implementation phases
 
 **Status:** Implemented in `jot/` (beta-ready). QA: [manual-qa.md](./manual-qa.md)
 
@@ -6,7 +6,7 @@
 
 ## P0 — Identity + keep recording ✅
 
-- [x] PakrAI / Pakr strings
+- [x] Jot / Jot strings
 - [x] Engine auto-start; Screen Recording in onboarding
 - [x] Recording / engine health indicator
 
@@ -27,9 +27,9 @@
 
 ---
 
-## P2 — Pakr agent ✅
+## P2 — Jot AI agent ✅
 
-- [x] Pakr tab, `pakra:chat`, `pakrTools` tests
+- [x] Jot tab, `jota:chat`, `jotTools` tests
 
 ---
 

@@ -1,4 +1,4 @@
-# PakrAI — resurfacing spec
+# Jot — resurfacing spec
 
 **Scope:** [SCOPE.md](./SCOPE.md). **Overlay candidates = notes first.** Screen capture powers **[query recordings](./QUERY-RECORDINGS.md)**, not proactive LLM cards. Context = frontmost app (+ optional title/OCR later).
 

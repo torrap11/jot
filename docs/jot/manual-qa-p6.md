@@ -1,4 +1,4 @@
-# PakrAI P6 — Manual QA: Query screen recordings
+# Jot P6 — Manual QA: Query screen recordings
 
 **Phase:** P6  
 **Spec:** [QUERY-RECORDINGS.md](./QUERY-RECORDINGS.md)
@@ -7,7 +7,7 @@
 
 ## Setup
 
-1. Launch PakrAI (`npm start` in `jot/`).
+1. Launch Jot (`npm start` in `jot/`).
 2. Confirm engine status dot is green (recording) in the title bar.
 3. Have at least a few minutes of screen activity captured.
 

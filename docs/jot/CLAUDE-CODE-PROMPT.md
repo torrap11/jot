@@ -1,10 +1,10 @@
-# Claude Code — complete PakrAI
+# Claude Code — complete Jot
 
 Copy everything below the line into Claude Code from workspace root `screenpipe-x-jot/`.
 
 ---
 
-You are the **build orchestrator for PakrAI**. Your only product spec is **`docs/pakrai/`**. Ship **working code**, not stubs. Use multiple sessions if needed.
+You are the **build orchestrator for Jot**. Your only product spec is **`docs/jot/`**. Ship **working code**, not stubs. Use multiple sessions if needed.
 
 ## Permissions
 
@@ -14,22 +14,22 @@ You are the **build orchestrator for PakrAI**. Your only product spec is **`docs
 
 ## Step 0 — Read (mandatory, in order)
 
-1. `docs/pakrai/SCOPE.md`
-2. `docs/pakrai/VISION.md`
-3. `docs/pakrai/QUERY-RECORDINGS.md`
-4. `docs/pakrai/REQUIREMENTS.md`
-5. `docs/pakrai/ARCHITECTURE.md`
-6. `docs/pakrai/CONSTRAINTS.md`
-7. `docs/pakrai/PHASES.md`
-8. `docs/pakrai/RESURFACING.md`
-9. `docs/pakrai/NOTES-AND-SEARCH.md`
-10. `docs/pakrai/PAKR-AGENT.md`
-11. `docs/pakrai/GAP-MAP.md`
-12. `docs/pakrai/PAKRAI_PROGRESS.md` — update after every phase
+1. `docs/jot/SCOPE.md`
+2. `docs/jot/VISION.md`
+3. `docs/jot/QUERY-RECORDINGS.md`
+4. `docs/jot/REQUIREMENTS.md`
+5. `docs/jot/ARCHITECTURE.md`
+6. `docs/jot/CONSTRAINTS.md`
+7. `docs/jot/PHASES.md`
+8. `docs/jot/RESURFACING.md`
+9. `docs/jot/NOTES-AND-SEARCH.md`
+10. `docs/jot/JOT-AI-AGENT.md`
+11. `docs/jot/GAP-MAP.md`
+12. `docs/jot/JOT_PROGRESS.md` — update after every phase
 
 ## What you are building
 
-**PakrAI** — local macOS app (`jot/` Electron shell):
+**Jot** — local macOS app (`jot/` Electron shell):
 
 | Verb | Feature |
 |------|---------|
@@ -37,7 +37,7 @@ You are the **build orchestrator for PakrAI**. Your only product spec is **`docs
 | **Find** | Note search (⌘P) |
 | **Query** | Search/ask **screen recordings** (Screenpipe engine, user-initiated) |
 | **Resurface** | Notes by **time** (NL schedule) or **context** (app switch; notes-first overlay) |
-| **Reorganize** | **Pakr** agent — chat to reorganize notes (LLM, user-initiated, confirm destructive ops) |
+| **Reorganize** | **Jot** agent — chat to reorganize notes (LLM, user-initiated, confirm destructive ops) |
 
 **In scope:** screen recording + query via `integration/` + `proactive-recall/` engine (`:3030`).
 
@@ -48,9 +48,9 @@ You are the **build orchestrator for PakrAI**. Your only product spec is **`docs
 - **Notes are the hero**; recording supports **Query**, not the reverse.
 - **Proactive overlay:** ≤1 card; notes-first candidates; **no LLM** on app-switch hot path.
 - **Query recordings:** user opens panel; search = FTS/deterministic; Ask may use LLM optionally.
-- **Pakr agent:** notes DB only — not a replacement for Recordings Ask.
+- **Jot AI agent:** notes DB only — not a replacement for Recordings Ask.
 - **Keep engine** auto-start; Screen Recording in onboarding; bundle engine in release dmg (P5).
-- **P0:** rebrand to PakrAI — **do not** remove Rewind/Ask; **rebrand** them in P6.
+- **P0:** rebrand to Jot — **do not** remove Rewind/Ask; **rebrand** them in P6.
 
 ## Step 1 — Verify workspace
 
@@ -66,24 +66,24 @@ If engine build fails, read `docs/claude-code/dev-setup.md` and fix before codin
 
 ## Step 2 — Execute phases in order
 
-Open `docs/pakrai/PHASES.md`. Run **every phase** until exit criteria pass:
+Open `docs/jot/PHASES.md`. Run **every phase** until exit criteria pass:
 
 | Phase | Focus |
 |-------|--------|
-| **P0** | PakrAI branding; keep recording + engine; health indicator |
+| **P0** | Jot branding; keep recording + engine; health indicator |
 | **P6** | Query recordings UX (rebrand Rewind/Ask → Recordings search/ask; offline states; citations) |
 | **P1** | Time resurfacing (`resurface_at`, parser, scheduler) — `RESURFACING.md` |
-| **P2** | Pakr agent panel + tools on notes DB — `PAKR-AGENT.md` |
+| **P2** | Jot AI agent panel + tools on notes DB — `JOT-AI-AGENT.md` |
 | **P3** | Activity tags / context rules (notes-first overlay) |
 | **P4** | Note search polish (ranking, recents, pinned) |
-| **P5** | Ship: PakrAI Application Support path, engine in dmg, QA doc |
+| **P5** | Ship: Jot Application Support path, engine in dmg, QA doc |
 
 **Per phase:**
 
 1. Read the phase section + linked spec files completely.
 2. Implement all tasks; meet **exit criteria**.
 3. Run verification commands; fix failures before proceeding.
-4. Update `docs/pakrai/PAKRAI_PROGRESS.md` (checklist, files touched, commands, blockers).
+4. Update `docs/jot/JOT_PROGRESS.md` (checklist, files touched, commands, blockers).
 5. Only then start the next phase.
 
 P6 may overlap P0 after branding strings land.
@@ -97,7 +97,7 @@ cargo test -p screenpipe-recall    # when recall routes touched
 node --check jot/app-main.js
 ```
 
-Manual: app switch overlay, dismiss/snooze, capture note, query recordings finds recent OCR text, Pakr reorg with confirm (P2+).
+Manual: app switch overlay, dismiss/snooze, capture note, query recordings finds recent OCR text, Jot reorg with confirm (P2+).
 
 ## Implementation hints
 
@@ -108,7 +108,7 @@ Manual: app switch overlay, dismiss/snooze, capture note, query recordings finds
 | Engine | `integration/engineManager.js` |
 | Overlay | `jot/overlay/`, `jot/recallWatcher.js` |
 | Time resurface | **build:** `jot/timeResurfaceParser.js`, `timeResurfaceScheduler.js` |
-| Pakr | **build:** `jot/pakr/` |
+| Jot | **build:** `jot/jot/` |
 
 Screenpipe API reference: `proactive-recall/.claude/skills/screenpipe-api/SKILL.md`
 
@@ -122,8 +122,8 @@ Screenpipe API reference: `proactive-recall/.claude/skills/screenpipe-api/SKILL.
 
 ## Finish criteria
 
-Set `PAKRAI_PROGRESS.md` status to **`beta-ready`** when P0, P6, P1, P2, P3, P4 exit criteria pass and P5 items are tracked.
+Set `JOT_PROGRESS.md` status to **`beta-ready`** when P0, P6, P1, P2, P3, P4 exit criteria pass and P5 items are tracked.
 
 Post a short summary: what shipped, test commands, human-only steps (TCC, notarization).
 
-**Start now:** read `docs/pakrai/SCOPE.md`, then begin **P0**.
+**Start now:** read `docs/jot/SCOPE.md`, then begin **P0**.
