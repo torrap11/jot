@@ -382,7 +382,15 @@ function createPakrWindow() {
 }
 
 function showPakrWindow() {
-  if (!pakrWin || pakrWin.isDestroyed()) createPakrWindow();
+  const isNew = !pakrWin || pakrWin.isDestroyed();
+  if (isNew) createPakrWindow();
+
+  if (isNew && searchWin && !searchWin.isDestroyed() && searchWin.isVisible()) {
+    const [sx, sy] = searchWin.getPosition();
+    const [sw] = searchWin.getSize();
+    pakrWin.setPosition(sx + sw + 12, sy);
+  }
+
   pakrWin.show();
   pakrWin.focus();
 }
