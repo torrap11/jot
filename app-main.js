@@ -75,6 +75,7 @@ const PRELOAD_MAIN = path.join(__dirname, 'preload.js');
 let captureWin = null;
 let searchWin = null;
 let overlayWin = null;
+let pakrWin = null;
 let lastSurfaceAt = 0;
 let lastSurfaceAppKey = '';
 let isImportingDb = false;
@@ -358,7 +359,44 @@ function wireUtilityWindowClose(win, hideFn) {
 
 function isJotMainWindow(win) {
   if (!win || win.isDestroyed()) return false;
-  return win === searchWin || win === captureWin;
+  return win === searchWin || win === captureWin || win === pakrWin;
+}
+
+function createPakrWindow() {
+  pakrWin = new BrowserWindow({
+    width: 420,
+    height: 520,
+    show: false,
+    title: 'Pakr',
+    minimizable: true,
+    maximizable: false,
+    resizable: true,
+    ...macHiddenInsetChrome(),
+    webPreferences: rendererWebPreferences(),
+  });
+  pakrWin.on('closed', () => {
+    pakrWin = null;
+  });
+  wireUtilityWindowClose(pakrWin, hidePakrWindow);
+  pakrWin.loadFile(path.join(__dirname, 'renderer', 'pakr.html'));
+}
+
+function showPakrWindow() {
+  if (!pakrWin || pakrWin.isDestroyed()) createPakrWindow();
+  pakrWin.show();
+  pakrWin.focus();
+}
+
+function hidePakrWindow() {
+  if (pakrWin && !pakrWin.isDestroyed()) pakrWin.hide();
+}
+
+function togglePakrWindow() {
+  if (pakrWin && !pakrWin.isDestroyed() && pakrWin.isVisible()) {
+    hidePakrWindow();
+  } else {
+    showPakrWindow();
+  }
 }
 
 async function flushSearchNoteBeforeHide() {
@@ -843,10 +881,7 @@ function registerShortcuts() {
   registerShortcut('CommandOrControl+Shift+N', () => void toggleComposeView());
   registerShortcut('CommandOrControl+Shift+R', () => void runManualRecall());
   registerShortcut('CommandOrControl+Shift+P', () => {
-    showSearchWindow();
-    if (searchWin && !searchWin.isDestroyed()) {
-      searchWin.webContents.send('search:switch-tab', 'pakr');
-    }
+    togglePakrWindow();
   });
 }
 
@@ -1777,6 +1812,7 @@ function registerIpc() {
   });
   ipcMain.on('window:show-search', (_event, payload) => showSearchWindow(payload || {}));
   ipcMain.on('window:show-capture', showCaptureWindow);
+  ipcMain.on('pakr:open', () => showPakrWindow());
 
   // Recall card actions — map to POST /recall/action then close overlay
   ipcMain.on('recall:dismiss', (_event, eventId) => {

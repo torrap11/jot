@@ -16,7 +16,7 @@
       <nav class="tabs" role="tablist" aria-label="Main navigation">
         <button class="tab active" id="tab-notes" data-tab="notes" type="button" role="tab" aria-selected="true" aria-controls="notes-panel">Notes</button>
         <button class="tab" id="tab-recordings" data-tab="recordings" type="button" role="tab" aria-selected="false" aria-controls="recordings-panel">Recordings</button>
-        <button class="tab" id="tab-pakr" data-tab="pakr" type="button" role="tab" aria-selected="false" aria-controls="pakr-panel">Pakr</button>
+        <button class="tab" id="tab-pakr" type="button" title="Open Pakr help (⌘⇧P)">Pakr</button>
       </nav>
       <button type="button" class="engine-status" id="engine-toggle" title="Click to turn screen recording on or off">
         <span class="engine-dot" id="engine-dot" aria-hidden="true"></span>
@@ -128,24 +128,7 @@
       </div>
     </div>
 
-    <!-- Pakr panel — conversational note reorganizer -->
-    <div id="pakr-panel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-pakr">
-      <div class="pakr-chat" id="pakr-chat" aria-label="Pakr conversation" aria-live="polite">
-        <div class="pakr-empty" id="pakr-empty">
-          Ask Pakr anything about PakrAI — shortcuts, tabs, resurfacing — or reorganize your notes.<br>
-          <span class="pakr-empty-example">Examples: What does ⌘⇧R do? · Move Client A notes into Q2 and tag <code>client-a</code>.</span>
-        </div>
-      </div>
-      <div class="pakr-confirm-row hidden" id="pakr-confirm-row">
-        <span class="pakr-confirm-summary" id="pakr-confirm-summary"></span>
-        <button type="button" class="pakr-confirm-btn" id="pakr-confirm-btn">Confirm</button>
-        <button type="button" class="pakr-cancel-btn" id="pakr-cancel-btn">Cancel</button>
-      </div>
-      <div class="pakr-input-row">
-        <textarea class="pakr-input" id="pakr-input" placeholder="Ask about PakrAI or reorganize notes…" rows="2" aria-label="Message to Pakr"></textarea>
-        <button type="button" class="pakr-send-btn" id="pakr-send-btn">Send</button>
-      </div>
-    </div>
+    <!-- Pakr is now a separate window (pakr.html) -->
 
   </main>
   <div id="image-lightbox" class="image-lightbox hidden" role="dialog" aria-modal="true" aria-label="Image preview">

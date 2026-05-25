@@ -88,5 +88,6 @@ contextBridge.exposeInMainWorld('mvp', {
 
   // Pakr agent (P2)
   pakraChat: (payload) => ipcRenderer.invoke('pakra:chat', payload),
+  openPakr: () => ipcRenderer.send('pakr:open'),
   onSwitchTab: (cb) => ipcRenderer.on('search:switch-tab', (_e, tab) => cb(tab)),
 });
