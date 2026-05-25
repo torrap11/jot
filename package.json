@@ -1,6 +1,6 @@
 {
   "name": "pakrai",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "PakrAI — local-first notes with screen recording, proactive resurfacing, and Pakr agent",
   "main": "app-main.js",
   "scripts": {
