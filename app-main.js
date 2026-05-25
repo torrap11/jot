@@ -24,6 +24,7 @@ const {
 } = require('electron');
 const { execFileSync } = require('child_process');
 const fs = require('fs/promises');
+const fsSync = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
@@ -52,7 +53,7 @@ function resolveIntegrationDir() {
     path.join(__dirname, '..', 'integration'),
   ];
   for (const dir of candidates) {
-    if (fs.existsSync(path.join(dir, 'engineManager.js'))) return dir;
+    if (fsSync.existsSync(path.join(dir, 'engineManager.js'))) return dir;
   }
   return candidates[0];
 }
@@ -828,12 +829,20 @@ async function toggleComposeView() {
   showCaptureWindow();
 }
 
+function registerShortcut(accelerator, handler) {
+  const ok = globalShortcut.register(accelerator, handler);
+  if (!ok) {
+    console.warn(`[app] Global shortcut not registered (may be taken by another app): ${accelerator}`);
+  }
+  return ok;
+}
+
 function registerShortcuts() {
-  globalShortcut.register('CommandOrControl+P', () => showSearchWindow({ toggle: true }));
-  globalShortcut.register('CommandOrControl+N', () => showCaptureWindow());
-  globalShortcut.register('CommandOrControl+Shift+N', () => void toggleComposeView());
-  globalShortcut.register('CommandOrControl+Shift+R', () => void runManualRecall());
-  globalShortcut.register('CommandOrControl+Shift+P', () => {
+  registerShortcut('CommandOrControl+P', () => showSearchWindow({ toggle: true }));
+  registerShortcut('CommandOrControl+N', () => showCaptureWindow());
+  registerShortcut('CommandOrControl+Shift+N', () => void toggleComposeView());
+  registerShortcut('CommandOrControl+Shift+R', () => void runManualRecall());
+  registerShortcut('CommandOrControl+Shift+P', () => {
     showSearchWindow();
     if (searchWin && !searchWin.isDestroyed()) {
       searchWin.webContents.send('search:switch-tab', 'pakr');
