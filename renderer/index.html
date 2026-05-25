@@ -59,33 +59,23 @@
             <details class="filing-details">
               <summary class="filing-summary">Filing</summary>
               <div class="filing-body">
-                <div class="folder-row">
-                  <label for="editor-folder-select">Folder</label>
-                  <select id="editor-folder-select" aria-label="Note folder"></select>
-                  <button type="button" id="editor-new-folder-btn" class="editor-new-folder-btn" title="Create new folder and move this note">+</button>
-                </div>
+                <!-- Hidden DOM anchors so JS doesn't crash -->
+                <select id="editor-folder-select" aria-hidden="true" style="display:none"></select>
+                <button type="button" id="editor-new-folder-btn" aria-hidden="true" style="display:none"></button>
+                <input id="app-select" type="hidden" />
+                <button id="link-btn" type="button" style="display:none"></button>
+                <div id="links" style="display:none"></div>
                 <div class="organize-hint-row">
-                  <label for="editor-organize-hint">Organization instructions</label>
                   <textarea
                     id="editor-organize-hint"
                     rows="2"
-                    placeholder="e.g. add to folders about The Vegetable and Research projects"
+                    placeholder="e.g. move to App Ideas folder and tag as research"
                   ></textarea>
                   <div class="organize-hint-actions">
                     <button type="button" id="editor-organize-btn">Organize note</button>
                   </div>
                   <p id="editor-organize-status" class="organize-status" aria-live="polite"></p>
                 </div>
-                <div class="link-row">
-                  <input
-                    id="app-select"
-                    type="text"
-                    placeholder="Link to app..."
-                    aria-label="Link note to app"
-                  />
-                  <button id="link-btn" type="button">Link</button>
-                </div>
-                <div id="links"></div>
                 <div class="image-row">
                   <button id="attach-image-btn" type="button">Attach image</button>
                 </div>
