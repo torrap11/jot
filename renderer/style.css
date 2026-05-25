@@ -799,6 +799,32 @@ button.folder-node:hover {
   min-height: 220px;
 }
 
+.editor-filing {
+  margin-top: 8px;
+}
+
+.filing-details {
+  border-top: 1px solid var(--border);
+}
+
+.filing-summary {
+  cursor: pointer;
+  padding: 8px 0;
+  font-size: 12px;
+  color: var(--muted);
+  user-select: none;
+}
+.filing-summary:hover {
+  color: var(--text);
+}
+
+.filing-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
 .image-row {
   display: flex;
 }

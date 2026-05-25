@@ -1290,6 +1290,13 @@ resultsEl.addEventListener('click', (event) => {
   openNote(Number(button.dataset.id));
 });
 
+resultsEl.addEventListener('dblclick', (event) => {
+  const row = event.target.closest('.result-row');
+  if (!row) return;
+  const noteId = Number(row.dataset.id);
+  if (noteId) void openNote(noteId);
+});
+
 resultsEl.addEventListener(
   'keydown',
   (event) => {
@@ -1351,7 +1358,7 @@ editorOrganizeBtn?.addEventListener('click', () => {
   void runOrganizeForActiveNote();
 });
 
-editorTextEl.addEventListener('keydown', (event) => {
+editorEl.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     event.preventDefault();
     event.stopPropagation();
