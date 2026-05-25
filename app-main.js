@@ -378,6 +378,7 @@ function createPakrWindow() {
     pakrWin = null;
   });
   wireUtilityWindowClose(pakrWin, hidePakrWindow);
+  pakrWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   pakrWin.loadFile(path.join(__dirname, 'renderer', 'pakr.html'));
 }
 
@@ -484,14 +485,14 @@ function createCaptureWindow() {
     captureWin = null;
   });
   wireUtilityWindowClose(captureWin, hideCaptureWindow);
-  attachClickAwayHide(captureWin);
+  captureWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   captureWin.loadFile(path.join(__dirname, 'renderer', 'capture.html'));
 }
 
 function createSearchWindow() {
   searchWin = new BrowserWindow({
-    width: 760,
-    height: 640,
+    width: 800,
+    height: 700,
     show: false,
     title: 'PakrAI',
     minimizable: true,
@@ -503,7 +504,7 @@ function createSearchWindow() {
     searchWin = null;
   });
   wireUtilityWindowClose(searchWin, hideSearchWindow);
-  attachClickAwayHide(searchWin);
+  searchWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   searchWin.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
@@ -1810,6 +1811,54 @@ function registerIpc() {
     }
   });
 
+  ipcMain.handle('ai:file-all-notes', async (_event, payload) => {
+    try {
+      const userPrompt = String((payload && payload.prompt) || '').trim();
+      const unfiled = db.listRecent(200, 'unfiled');
+      if (unfiled.length === 0) return { summary: 'No unfiled notes to file.' };
+      const hint = userPrompt || 'File each note into the best-matching folder based on its content. Create new folders if needed.';
+      let filed = 0;
+      for (const note of unfiled) {
+        if (!note.text || !note.text.trim()) continue;
+        try {
+          const result = await aiOrganize.organizeNoteFromHint(db, {
+            noteId: note.id,
+            noteText: note.text,
+            organizeHint: hint,
+            userDataDir: app.getPath('userData'),
+          });
+          if (result.applied || (result.plan && result.plan.length > 0)) filed++;
+        } catch { /* skip individual failures */ }
+      }
+      if (filed > 0) notifySearchNotesChanged();
+      return { summary: `Filed ${filed} of ${unfiled.length} notes.` };
+    } catch (e) {
+      return { error: e.message || String(e) };
+    }
+  });
+
+  ipcMain.handle('ai:natural-sort', async (_event, payload) => {
+    try {
+      const userPrompt = String((payload && payload.prompt) || '').trim();
+      const notes = Array.isArray(payload.notes) ? payload.notes : [];
+      if (!userPrompt || notes.length === 0) return { error: 'Need a prompt and notes.' };
+      const { apiKey, model } = aiOrganize.readAnthropicCredentials(app.getPath('userData'));
+      if (!apiKey) return { error: 'Add an API key (Engine menu) first.' };
+      const system = `You reorder a list of notes based on a user instruction. Reply with JSON only: {"order":[id1,id2,...]} — the note IDs in the requested display order. Include ALL IDs.`;
+      const notesList = notes.map((n) => `id=${n.id} folder=${n.folder_id || 'unfiled'} date=${n.created_at} text="${(n.text || '').slice(0, 100)}"`).join('\n');
+      const text = await aiOrganize.callAnthropic({ apiKey, model, system, messages: [{ role: 'user', content: `Instruction: ${userPrompt}\n\nNotes:\n${notesList}` }] });
+      let parsed;
+      try {
+        const match = text.match(/\{[\s\S]*\}/);
+        parsed = match ? JSON.parse(match[0]) : null;
+      } catch { return { error: 'Could not parse AI response.' }; }
+      if (!parsed || !Array.isArray(parsed.order)) return { error: 'Invalid AI response.' };
+      return { order: parsed.order };
+    } catch (e) {
+      return { error: e.message || String(e) };
+    }
+  });
+
   ipcMain.on('window:hide-capture', hideCaptureWindow);
   ipcMain.on('window:hide-search', hideSearchWindow);
   ipcMain.on('window:minimize-capture', () => {
@@ -2013,6 +2062,7 @@ app.whenReady().then(async () => {
   console.log('[app] DB path:', db.getDbPath());
 
   createSearchWindow();
+  showSearchWindow();
   buildAppMenu();
   registerShortcuts();
   registerIpc();

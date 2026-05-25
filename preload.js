@@ -65,6 +65,8 @@ contextBridge.exposeInMainWorld('mvp', {
   organizeChat: (payload) => ipcRenderer.invoke('ai:organize-chat', payload),
   applyOrganizePlan: (plan) => ipcRenderer.invoke('ai:organize-apply', plan),
   runNotesCleanup: (options) => ipcRenderer.invoke('notes:cleanup', options || {}),
+  fileAllNotes: (payload) => ipcRenderer.invoke('ai:file-all-notes', payload || {}),
+  naturalSort: (payload) => ipcRenderer.invoke('ai:natural-sort', payload || {}),
   getAiKeyStatus: () => ipcRenderer.invoke('ai:key:get-status'),
   setAiKey: (apiKey) => ipcRenderer.invoke('ai:key:set', apiKey),
   openExternalUrl: (url) => ipcRenderer.invoke('external:open-url', url),

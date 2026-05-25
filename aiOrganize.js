@@ -309,4 +309,5 @@ module.exports = {
   applyOrganizePlan,
   organizeNoteFromHint,
   interpretRemindWorkflow,
+  callAnthropic,
 };

@@ -16,7 +16,7 @@
       <nav class="tabs" role="tablist" aria-label="Main navigation">
         <button class="tab active" id="tab-notes" data-tab="notes" type="button" role="tab" aria-selected="true" aria-controls="notes-panel">Notes</button>
         <button class="tab" id="tab-recordings" data-tab="recordings" type="button" role="tab" aria-selected="false" aria-controls="recordings-panel">Recordings</button>
-        <button class="tab" id="tab-pakr" type="button" title="Open Pakr help (⌘⇧P)">Pakr</button>
+        <button class="tab" id="tab-pakr" type="button" title="Open Pakr AI (⌘⇧P)">Pakr ⌘⇧P</button>
       </nav>
       <button type="button" class="engine-status" id="engine-toggle" title="Click to turn screen recording on or off">
         <span class="engine-dot" id="engine-dot" aria-hidden="true"></span>
@@ -26,25 +26,33 @@
 
     <!-- Notes panel (existing) -->
     <div id="notes-panel" class="tab-panel" role="tabpanel" aria-labelledby="">
-      <div class="search-toolbar">
-        <input id="query" type="search" placeholder="Search notes…" autofocus />
-        <button type="button" id="cleanup-notes-btn" title="Deduplicate notes and optionally run AI merge (with API key)">
-          Clean DB
-        </button>
-      </div>
-      <p id="cleanup-status" class="cleanup-status cleanup-status--hidden" role="status" aria-live="polite"></p>
-      <section id="folder-diagram" class="folder-diagram" aria-label="Folder structure diagram">
-        <div class="folder-diagram-header">
-          <span class="folder-diagram-title">Folder structure diagram</span>
-          <button type="button" id="new-folder-btn">New folder</button>
+      <div class="split-top" id="split-top">
+        <section id="folder-diagram" class="folder-diagram" aria-label="Folder structure diagram">
+          <div class="folder-diagram-header">
+            <span class="folder-diagram-title">Folders</span>
+            <button type="button" id="new-folder-btn">New folder</button>
+          </div>
+          <div id="folder-diagram-tree" class="folder-diagram-tree"></div>
+        </section>
+        <div class="notes-action-row">
+          <input id="display-prompt" type="text" placeholder="Custom display prompt (optional)" />
+          <button type="button" id="display-prompt-btn" title="Sort/filter notes with natural language">Display</button>
+          <span class="action-divider"></span>
+          <input id="file-notes-prompt" type="text" placeholder="Custom organization prompt (optional)" />
+          <button type="button" id="file-notes-btn" title="AI-file all unfiled notes into folders">File Notes</button>
         </div>
-        <div id="folder-diagram-tree" class="folder-diagram-tree"></div>
-      </section>
-      <div id="bulk-actions" class="bulk-actions hidden">
-        <span id="selected-count">0 selected</span>
-        <button id="delete-selected-btn" type="button" class="btn-danger">Delete selected</button>
+        <p id="cleanup-status" class="cleanup-status cleanup-status--hidden" role="status" aria-live="polite"></p>
+        <div class="search-toolbar">
+          <input id="query" type="search" placeholder="Search notes…" autofocus />
+        </div>
       </div>
-      <div class="search-content">
+      <div class="split-handle" id="split-handle" title="Drag to resize"></div>
+      <div class="split-bottom" id="split-bottom">
+        <div id="bulk-actions" class="bulk-actions hidden">
+          <span id="selected-count">0 selected</span>
+          <button id="delete-selected-btn" type="button" class="btn-danger">Delete selected</button>
+        </div>
+        <div class="search-content">
         <div id="results"></div>
         <section id="editor" class="hidden">
           <div class="editor-meta">
@@ -57,9 +65,9 @@
           <textarea id="editor-text" placeholder="Your note…"></textarea>
           <div class="editor-filing">
             <details class="filing-details">
-              <summary class="filing-summary">Filing</summary>
+              <summary class="filing-summary">AI filing context (optional)</summary>
               <div class="filing-body">
-                <!-- Hidden DOM anchors so JS doesn't crash -->
+                <!-- Hidden DOM stubs -->
                 <select id="editor-folder-select" aria-hidden="true" style="display:none"></select>
                 <button type="button" id="editor-new-folder-btn" aria-hidden="true" style="display:none"></button>
                 <input id="app-select" type="hidden" />
@@ -68,8 +76,8 @@
                 <div class="organize-hint-row">
                   <textarea
                     id="editor-organize-hint"
-                    rows="2"
-                    placeholder="e.g. move to App Ideas folder and tag as research"
+                    rows="1"
+                    placeholder="e.g. file into Research + App Ideas folders"
                   ></textarea>
                   <div class="organize-hint-actions">
                     <button type="button" id="editor-organize-btn">Organize note</button>
@@ -78,6 +86,7 @@
                 </div>
                 <div class="image-row">
                   <button id="attach-image-btn" type="button">Attach image</button>
+                  <span class="capture-attach-hint">or paste (⌘V)</span>
                 </div>
                 <div class="file-row">
                   <button id="attach-file-btn" type="button">Attach file</button>
@@ -89,6 +98,7 @@
           </div>
         </section>
       </div>
+      </div><!-- /split-bottom -->
     </div>
 
     <!-- Recordings panel — screen capture timeline + Ask -->

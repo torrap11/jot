@@ -17,31 +17,21 @@
       autofocus
     ></textarea>
     <div class="organize-hint-row capture-organize-hint-row">
-      <label for="capture-organize-hint">Organization instructions</label>
+      <label for="capture-organize-hint">AI filing context (optional)</label>
       <textarea
         id="capture-organize-hint"
-        rows="2"
+        rows="1"
         placeholder="e.g. file into Research + App Ideas folders"
       ></textarea>
     </div>
-    <div class="capture-folder-row folder-row">
-      <label for="capture-folder-select">Folder</label>
-      <select id="capture-folder-select" aria-label="Save note into folder">
-        <option value="unfiled">Unfiled</option>
-      </select>
-    </div>
-    <div class="capture-link-row">
-      <input
-        id="capture-app-input"
-        type="text"
-        placeholder="Link to app (optional): type app name or bundle id"
-        aria-label="Link note to app"
-      />
-    </div>
+    <!-- Hidden DOM stubs so capture.js doesn't crash -->
+    <select id="capture-folder-select" style="display:none" aria-hidden="true"><option value="unfiled">Unfiled</option></select>
+    <input id="capture-app-input" type="hidden" />
     <div id="capture-pending-images" class="capture-pending-images hidden"></div>
     <div class="capture-attach-row">
       <button id="attach-image-capture-btn" type="button">Attach image</button>
       <button id="attach-file-capture-btn" type="button">Attach file</button>
+      <span class="capture-attach-hint">or paste an image (⌘V)</span>
     </div>
   </main>
   <script src="capture.js"></script>

@@ -14,8 +14,12 @@ const state = {
 };
 
 const queryInput = document.getElementById('query');
+const fileNotesBtn = document.getElementById('file-notes-btn');
+const fileNotesPromptEl = document.getElementById('file-notes-prompt');
 const cleanupNotesBtn = document.getElementById('cleanup-notes-btn');
 const cleanupStatusEl = document.getElementById('cleanup-status');
+const displayPromptEl = document.getElementById('display-prompt');
+const displayPromptBtn = document.getElementById('display-prompt-btn');
 const importDbBtn = document.getElementById('import-db-btn');
 const exportDbBtn = document.getElementById('export-db-btn');
 const aiKeyAccessStatusEl = document.getElementById('ai-key-access-status');
@@ -186,6 +190,14 @@ function openImageLightbox(src, alt) {
 async function closeEditor() {
   clearTimeout(saveTimer);
   await flushActiveNote();
+
+  const noteText = editorTextEl.value.trim();
+  const hint = editorOrganizeHintEl ? editorOrganizeHintEl.value.trim() : '';
+  const noteId = state.activeId;
+  if (noteId && noteText) {
+    void autoOrganizeNote(noteId, noteText, hint);
+  }
+
   closeImageLightbox();
   state.activeId = null;
   window.__jotActiveNoteId = null;
@@ -203,6 +215,24 @@ async function closeEditor() {
   renderResults();
   if (state.listFocusId != null) focusListRow(state.listFocusId);
   else queryInput.focus();
+}
+
+async function autoOrganizeNote(noteId, noteText, userHint) {
+  try {
+    const prompt = userHint
+      ? userHint
+      : `Auto-file this note into the best folder based on its content. Create a new folder if none fit.`;
+    const result = await window.mvp.organizeNoteFromHint({
+      noteId,
+      noteText,
+      organizeHint: prompt,
+    });
+    if (result.skipped || result.error) return;
+    await loadFolders();
+    await runQuery(queryInput.value.trim());
+  } catch {
+    /* non-blocking — if AI key missing or error, silently skip */
+  }
 }
 
 function focusListRow(noteId) {
@@ -260,7 +290,7 @@ async function applyFolderFilterFromNav(newFilter) {
 function updateBulkActionsUi() {
   const count = state.selectedIds.size;
   selectedCountEl.textContent = `${count} selected`;
-  const showBulk = unifiedSearchScope === 'notes' && count > 0;
+  const showBulk = count > 0;
   bulkActionsEl.classList.toggle('hidden', !showBulk);
 }
 
@@ -1001,34 +1031,69 @@ function showCleanupStatus(text) {
   }, 16000);
 }
 
-cleanupNotesBtn?.addEventListener('click', async () => {
-  const ok = confirm(
-    'Run Clean DB?\n\n• Removes duplicate saves (same text and timestamp).\n• Merges notes whose text only differs by spacing or capital letters.\n• With an Anthropic API key, AI can merge overlapping ideas and reorganize folders (manual only — never automatic).',
-  );
-  if (!ok) return;
-  cleanupNotesBtn.disabled = true;
-  showCleanupStatus('Running Clean DB…');
+fileNotesBtn?.addEventListener('click', async () => {
+  const prompt = fileNotesPromptEl ? fileNotesPromptEl.value.trim() : '';
+  fileNotesBtn.disabled = true;
+  showCleanupStatus('Filing notes…');
   try {
-    const res = await window.mvp.runNotesCleanup({ useAi: true });
+    const res = await window.mvp.fileAllNotes({ prompt });
     if (res.error) {
-      showCleanupStatus(`Clean DB failed: ${res.error}`);
+      showCleanupStatus(`Filing failed: ${res.error}`);
       return;
     }
-    showCleanupStatus(res.summary || 'Clean DB finished.');
+    showCleanupStatus(res.summary || 'Notes filed.');
     if (state.activeId) {
       const note = await window.mvp.getNote(state.activeId);
       if (!note) closeEditor();
     }
+    await loadFolders();
     await runQuery(queryInput.value.trim());
   } catch (e) {
-    showCleanupStatus(`Clean DB failed: ${e.message || String(e)}`);
+    showCleanupStatus(`Filing failed: ${e.message || String(e)}`);
   } finally {
-    cleanupNotesBtn.disabled = false;
+    fileNotesBtn.disabled = false;
+  }
+});
+
+fileNotesPromptEl?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    fileNotesBtn?.click();
   }
 });
 
 queryInput.addEventListener('input', () => {
   runQuery(queryInput.value.trim());
+});
+
+displayPromptBtn?.addEventListener('click', async () => {
+  const prompt = displayPromptEl ? displayPromptEl.value.trim() : '';
+  if (!prompt) return;
+  displayPromptBtn.disabled = true;
+  try {
+    const res = await window.mvp.naturalSort({ prompt, notes: state.notes.map((n) => ({ id: n.id, text: (n.text || '').slice(0, 200), folder_id: n.folder_id, created_at: n.created_at })) });
+    if (res.error || !Array.isArray(res.order)) {
+      showCleanupStatus(res.error || 'Could not reorder.');
+      return;
+    }
+    const idOrder = res.order;
+    const noteMap = new Map(state.notes.map((n) => [n.id, n]));
+    const sorted = idOrder.map((id) => noteMap.get(id)).filter(Boolean);
+    const remaining = state.notes.filter((n) => !idOrder.includes(n.id));
+    state.notes = [...sorted, ...remaining];
+    renderResults();
+  } catch (e) {
+    showCleanupStatus(`Display error: ${e.message || String(e)}`);
+  } finally {
+    displayPromptBtn.disabled = false;
+  }
+});
+
+displayPromptEl?.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    displayPromptBtn?.click();
+  }
 });
 
 importDbBtn?.addEventListener('click', async () => {
@@ -1160,6 +1225,44 @@ resultsEl.addEventListener('click', (event) => {
   const button = event.target.closest('.result');
   if (!button) return;
   openNote(Number(button.dataset.id));
+});
+
+// ── Drag notes onto folder tree ─────────────────────────────────────────
+folderDiagramEl?.addEventListener('dragover', (event) => {
+  if (dragNoteId == null) return;
+  const node = event.target.closest('.folder-node[data-folder-filter]');
+  if (!node) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  folderDiagramEl.querySelectorAll('.folder-node.drop-target').forEach((el) => {
+    if (el !== node) el.classList.remove('drop-target');
+  });
+  node.classList.add('drop-target');
+});
+
+folderDiagramEl?.addEventListener('dragleave', (event) => {
+  const node = event.target.closest('.folder-node[data-folder-filter]');
+  if (!node) return;
+  const related = event.relatedTarget;
+  if (related && node.contains(related)) return;
+  node.classList.remove('drop-target');
+});
+
+folderDiagramEl?.addEventListener('drop', (event) => {
+  event.preventDefault();
+  folderDiagramEl.querySelectorAll('.folder-node.drop-target').forEach((el) => el.classList.remove('drop-target'));
+  if (dragNoteId == null) return;
+  const node = event.target.closest('.folder-node[data-folder-filter]');
+  if (!node) return;
+  const filter = node.dataset.folderFilter;
+  const noteId = dragNoteId;
+  clearNoteDragUi();
+  const folderId = filter === 'all' ? null : filter === 'unfiled' ? null : Number(filter);
+  void (async () => {
+    await window.mvp.setNoteFolder(noteId, folderId);
+    await loadFolders();
+    await runQuery(queryInput.value.trim());
+  })();
 });
 
 resultsEl.addEventListener('dblclick', (event) => {
@@ -1832,13 +1935,13 @@ async function loadRecordingsTimeline() {
   const statusEl = document.getElementById('rec-status');
   if (!timelineEl || !statusEl) return;
 
-  statusEl.textContent = 'Loading recent screen captures…';
+  statusEl.textContent = 'Loading recent screen activity…';
   timelineEl.innerHTML = '';
 
   const result = await window.mvp.screenpipeSearch({
     q: '',
     start_time: '7d ago',
-    limit: 20,
+    limit: 100,
   });
 
   if (!result.ok) {
@@ -1850,15 +1953,43 @@ async function loadRecordingsTimeline() {
 
   const items = resultItemsScreenOnly(result.data || []);
   if (items.length === 0) {
-    statusEl.textContent = 'No screen captures in the last 7 days.';
+    statusEl.textContent = 'No screen activity in the last 7 days.';
     return;
   }
 
-  statusEl.textContent = `${items.length} recent screen capture${items.length === 1 ? '' : 's'} (7d)`;
-  items.forEach((item) => {
-    const card = renderCaptureResult(item);
+  const sessions = groupIntoSessions(items);
+  statusEl.textContent = `${sessions.length} session${sessions.length === 1 ? '' : 's'} (last 7 days)`;
+  sessions.forEach((session) => {
+    const card = renderSessionCard(session);
     if (card) timelineEl.appendChild(card);
   });
+}
+
+function groupIntoSessions(items) {
+  const SESSION_GAP_MS = 5 * 60 * 1000;
+  const parsed = items.map((item) => {
+    const c = item.content || {};
+    const app = c.app_name || c.app || 'Unknown';
+    const ts = new Date(c.timestamp || 0).getTime();
+    const text = c.text || c.content || '';
+    return { app, ts, text, raw: item };
+  }).filter((p) => p.ts > 0).sort((a, b) => b.ts - a.ts);
+
+  const sessions = [];
+  let current = null;
+
+  for (const entry of parsed) {
+    if (!current || entry.app !== current.app || current.startTs - entry.ts > SESSION_GAP_MS) {
+      if (current) sessions.push(current);
+      current = { app: entry.app, startTs: entry.ts, endTs: entry.ts, entries: [entry] };
+    } else {
+      current.startTs = Math.min(current.startTs, entry.ts);
+      current.endTs = Math.max(current.endTs, entry.ts);
+      current.entries.push(entry);
+    }
+  }
+  if (current) sessions.push(current);
+  return sessions;
 }
 
 function formatTimestamp(ts) {
@@ -1867,6 +1998,70 @@ function formatTimestamp(ts) {
     const d = new Date(ts);
     return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   } catch { return String(ts).slice(0, 16); }
+}
+
+function formatDuration(ms) {
+  if (ms < 60000) return '<1 min';
+  const mins = Math.round(ms / 60000);
+  if (mins < 60) return `${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem > 0 ? `${hrs}h ${rem}m` : `${hrs}h`;
+}
+
+function summarizeSession(session) {
+  const words = new Map();
+  for (const e of session.entries) {
+    const tokens = e.text.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter((w) => w.length > 3);
+    for (const w of tokens) words.set(w, (words.get(w) || 0) + 1);
+  }
+  const top = [...words.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([w]) => w);
+  if (top.length === 0) return 'Screen activity captured';
+  return top.join(', ');
+}
+
+function renderSessionCard(session) {
+  const card = document.createElement('div');
+  card.className = 'session-card';
+  card.setAttribute('role', 'listitem');
+  const duration = formatDuration(session.endTs - session.startTs);
+  const time = formatTimestamp(session.endTs);
+  const summary = summarizeSession(session);
+  const count = session.entries.length;
+
+  card.innerHTML = `
+    <div class="session-card-header">
+      <span class="session-app">${escapeHtml(session.app)}</span>
+      <span class="session-duration">${escapeHtml(duration)}</span>
+      <span class="session-time">${escapeHtml(time)}</span>
+    </div>
+    <div class="session-summary">${escapeHtml(summary)}</div>
+    <div class="session-meta">${count} capture${count > 1 ? 's' : ''} — click to inspect</div>
+    <div class="session-detail hidden"></div>
+  `;
+
+  card.addEventListener('click', () => {
+    const detail = card.querySelector('.session-detail');
+    const isOpen = !detail.classList.contains('hidden');
+    if (isOpen) {
+      detail.classList.add('hidden');
+      card.classList.remove('expanded');
+      return;
+    }
+    card.classList.add('expanded');
+    detail.classList.remove('hidden');
+    if (!detail.dataset.loaded) {
+      detail.dataset.loaded = '1';
+      detail.innerHTML = session.entries.map((e) => `
+        <div class="session-entry">
+          <span class="session-entry-time">${escapeHtml(formatTimestamp(e.ts))}</span>
+          <span class="session-entry-text">${escapeHtml((e.text || '').slice(0, 200))}</span>
+        </div>
+      `).join('');
+    }
+  });
+
+  return card;
 }
 
 function buildCaptureCard({ badgeClass, badgeLabel, appName, timestamp, snippet }) {
@@ -2015,3 +2210,35 @@ document.getElementById('rec-ask-btn').addEventListener('click', () => void runR
 document.getElementById('rec-ask-query').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') void runRecordingsAsk();
 });
+
+// ── Split-pane drag handle ──────────────────────────────────────────────
+(function initSplitHandle() {
+  const handle = document.getElementById('split-handle');
+  const top = document.getElementById('split-top');
+  const panel = document.getElementById('notes-panel');
+  if (!handle || !top || !panel) return;
+
+  let startY = 0;
+  let startH = 0;
+
+  function onMove(e) {
+    const dy = e.clientY - startY;
+    const newH = Math.max(40, Math.min(startH + dy, panel.clientHeight - 80));
+    top.style.flex = `0 0 ${newH}px`;
+  }
+
+  function onUp() {
+    handle.classList.remove('dragging');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
+
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    startY = e.clientY;
+    startH = top.getBoundingClientRect().height;
+    handle.classList.add('dragging');
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+})();

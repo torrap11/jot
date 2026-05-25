@@ -107,8 +107,8 @@ function buildRecordArgs() {
   if (!_captureEnabled) {
     recordArgs.push('--disable-vision', '--disable-audio');
   } else {
-    // PakrAI: laptop screen only — no microphone or system audio capture.
     recordArgs.push('--disable-audio');
+    recordArgs.push('--data-retention', '7');
   }
   if (process.env.SCREENPIPE_RECORD_ARGS) {
     recordArgs.push(...process.env.SCREENPIPE_RECORD_ARGS.split(/\s+/).filter(Boolean));
