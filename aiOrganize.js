@@ -54,7 +54,7 @@ function buildOrganizeSnapshot(database) {
   return { folders, notes };
 }
 
-const ORGANIZE_SYSTEM = `You help organize notes into folders for the app "Pakr Notes".
+const ORGANIZE_SYSTEM = `You help organize notes into folders for the app "Jot".
 The user sends a JSON snapshot: "folders" [{id, name}] and "notes" [{id, preview, folderId}].
 
 Reply with a single JSON object only (no markdown fences). Shape:
@@ -222,7 +222,7 @@ function applyOrganizePlan(database, plan) {
   return { applied, errors };
 }
 
-const WORKFLOW_SYSTEM = `You convert natural-language workflows for Pakr Notes (a macOS notes + screen recall app) into a reminder that surfaces when the user opens a specific app.
+const WORKFLOW_SYSTEM = `You convert natural-language workflows for Jot (a macOS notes + screen recall app) into a reminder that surfaces when the user opens a specific app.
 
 Reply with a single JSON object only (no markdown fences). Shape:
 {"reminderText":"<what to remember or do>","appQuery":"<short macOS app name>"}
@@ -244,7 +244,7 @@ async function interpretRemindWorkflow(userDataDir, rawText) {
   if (!apiKey) {
     return {
       error:
-        'Use “remind me to … when i open <App>”, or add an Anthropic API key (toolbar) so Pakr Notes can interpret free-form workflows.',
+        'Use “remind me to … when i open <App>”, or add an Anthropic API key (toolbar) so Jot can interpret free-form workflows.',
     };
   }
 
@@ -271,7 +271,7 @@ async function interpretRemindWorkflow(userDataDir, rawText) {
   return { reminderText, appQuery };
 }
 
-const NOTE_ORGANIZE_SYSTEM = `You file ONE note into folders for "Pakr Notes".
+const NOTE_ORGANIZE_SYSTEM = `You file ONE note into folders for "Jot".
 The user gives note body text and organization instructions (how to file it).
 Reply with JSON only: {"reply":"<short status>","plan":[...]}
 Use the same plan ops as organize: createFolder, moveNote (noteId must match the given id).

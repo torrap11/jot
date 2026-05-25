@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: jot-image:" />
-  <title>Pakr Notes</title>
+  <title>Jot</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body class="search-body">
@@ -16,7 +16,7 @@
       <nav class="tabs" role="tablist" aria-label="Main navigation">
         <button class="tab active" id="tab-notes" data-tab="notes" type="button" role="tab" aria-selected="true" aria-controls="notes-panel">Notes</button>
         <button class="tab" id="tab-recordings" data-tab="recordings" type="button" role="tab" aria-selected="false" aria-controls="recordings-panel">Recordings</button>
-        <button class="tab" id="tab-pakr" type="button" title="Open Pakr AI (⌘⇧P)">Pakr ⌘⇧P</button>
+        <button class="tab" id="tab-jot-ai" type="button" title="Open Jot AI (⌘⇧P)">Jot AI ⌘⇧P</button>
       </nav>
       <button type="button" class="engine-status" id="engine-toggle" title="Click to turn screen recording on or off">
         <span class="engine-dot" id="engine-dot" aria-hidden="true"></span>
@@ -104,7 +104,7 @@
     <!-- Recordings panel — screen capture timeline + Ask -->
     <div id="recordings-panel" class="tab-panel hidden" role="tabpanel" aria-labelledby="tab-recordings">
 
-      <div id="rec-ask-pane" class="rec-pane">
+      <div id="rec-ask-pane" class="rec-pane hidden">
         <div class="ask-toolbar">
           <input id="rec-ask-query" type="text" placeholder="Search or ask about your screen history…" />
           <button id="rec-ask-btn" type="button">Ask</button>
@@ -115,15 +115,15 @@
         <div id="rec-ask-results" class="capture-results" role="list"></div>
       </div>
 
-      <!-- Offline empty state -->
-      <div id="rec-offline" class="rec-offline hidden" aria-live="polite">
-        <p class="rec-offline-icon">◉</p>
-        <p class="rec-offline-title">Recording engine is offline</p>
-        <p class="rec-offline-hint">Screen history isn't available right now. Notes still work. Use the status button above or Engine → Restart Engine in the menu to start recording.</p>
+      <!-- Under construction state -->
+      <div id="rec-offline" class="rec-offline" aria-live="polite">
+        <p class="rec-offline-icon">🚧</p>
+        <p class="rec-offline-title">Screen engine — under construction</p>
+        <p class="rec-offline-hint">The screen recording engine is being rebuilt and isn't available yet in this release. Notes, folders, and Jot AI work fully. Screen recording is coming soon.</p>
       </div>
     </div>
 
-    <!-- Pakr is now a separate window (pakr.html) -->
+    <!-- Jot AI is a separate window (jot-ai.html) -->
 
   </main>
   <div id="image-lightbox" class="image-lightbox hidden" role="dialog" aria-modal="true" aria-label="Image preview">

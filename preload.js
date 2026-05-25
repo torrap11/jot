@@ -88,8 +88,8 @@ contextBridge.exposeInMainWorld('mvp', {
   parseTimeReminder: (text) => ipcRenderer.invoke('capture:parse-time-reminder', text),
   setResurfaceAt: (noteId, isoStr) => ipcRenderer.invoke('notes:set-resurface-at', noteId, isoStr),
 
-  // Pakr agent (P2)
-  pakraChat: (payload) => ipcRenderer.invoke('pakra:chat', payload),
-  openPakr: () => ipcRenderer.send('pakr:open'),
+  // Jot AI agent
+  jotAiChat: (payload) => ipcRenderer.invoke('jot-ai:chat', payload),
+  openJotAi: () => ipcRenderer.send('jot-ai:open'),
   onSwitchTab: (cb) => ipcRenderer.on('search:switch-tab', (_e, tab) => cb(tab)),
 });

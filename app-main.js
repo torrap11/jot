@@ -40,7 +40,7 @@ const { executeCaptureWorkflow } = require('./captureWorkflow');
 const { parseOverlayCommand, formatMinutesLabel } = require('./overlayCommand');
 const { parseTimeReminderText, looksLikeTimeReminder } = require('./timeParser');
 const resurfaceScheduler = require('./resurfaceScheduler');
-const { runPakrAgent } = require('./pakr/pakrAgent');
+const { runJotAiAgent } = require('./jot-ai/jotAiAgent');
 
 // Integration: screenpipe engine sidecar + recall client + screenpipe search.
 function resolveIntegrationDir() {
@@ -75,7 +75,7 @@ const PRELOAD_MAIN = path.join(__dirname, 'preload.js');
 let captureWin = null;
 let searchWin = null;
 let overlayWin = null;
-let pakrWin = null;
+let jotAiWin = null;
 let lastSurfaceAt = 0;
 let lastSurfaceAppKey = '';
 let isImportingDb = false;
@@ -151,7 +151,7 @@ function raiseOverlayWindow(win) {
 function isJotOwningFrontBundle(bundleId) {
   const b = String(bundleId || '');
   if (!b) return false;
-  if (b === 'com.pakrai.app') return true;
+  if (b === 'com.jot.app' || b === 'com.pakrai.app') return true;
   if (!app.isPackaged && b === 'com.github.Electron') return true;
   return false;
 }
@@ -359,64 +359,88 @@ function wireUtilityWindowClose(win, hideFn) {
 
 function isJotMainWindow(win) {
   if (!win || win.isDestroyed()) return false;
-  return win === searchWin || win === captureWin || win === pakrWin;
+  return win === searchWin || win === captureWin || win === jotAiWin;
 }
 
-function createPakrWindow() {
-  pakrWin = new BrowserWindow({
+function createJotAiWindow() {
+  jotAiWin = new BrowserWindow({
     width: 420,
     height: 520,
     show: false,
-    title: 'Pakr',
+    title: 'Jot AI',
     minimizable: true,
     maximizable: false,
     resizable: true,
     ...macHiddenInsetChrome(),
     webPreferences: rendererWebPreferences(),
   });
-  pakrWin.on('closed', () => {
-    pakrWin = null;
+  jotAiWin.on('closed', () => {
+    jotAiWin = null;
   });
-  wireUtilityWindowClose(pakrWin, hidePakrWindow);
-  pakrWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  pakrWin.loadFile(path.join(__dirname, 'renderer', 'pakr.html'));
+  wireUtilityWindowClose(jotAiWin, hideJotAiWindow);
+  jotAiWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  jotAiWin.loadFile(path.join(__dirname, 'renderer', 'jot-ai.html'));
 }
 
-function showPakrWindow() {
-  const isNew = !pakrWin || pakrWin.isDestroyed();
-  if (isNew) createPakrWindow();
+function showJotAiWindow() {
+  const isNew = !jotAiWin || jotAiWin.isDestroyed();
+  if (isNew) createJotAiWindow();
 
   if (isNew && searchWin && !searchWin.isDestroyed() && searchWin.isVisible()) {
     const [sx, sy] = searchWin.getPosition();
     const [sw] = searchWin.getSize();
-    pakrWin.setPosition(sx + sw + 12, sy);
+    jotAiWin.setPosition(sx + sw + 12, sy);
   }
 
-  pakrWin.show();
-  pakrWin.focus();
+  jotAiWin.show();
+  jotAiWin.focus();
 }
 
-function hidePakrWindow() {
-  if (pakrWin && !pakrWin.isDestroyed()) pakrWin.hide();
+function hideJotAiWindow() {
+  if (jotAiWin && !jotAiWin.isDestroyed()) jotAiWin.hide();
 }
 
-function togglePakrWindow() {
-  if (pakrWin && !pakrWin.isDestroyed() && pakrWin.isVisible()) {
-    hidePakrWindow();
+function toggleJotAiWindow() {
+  if (jotAiWin && !jotAiWin.isDestroyed() && jotAiWin.isVisible()) {
+    hideJotAiWindow();
   } else {
-    showPakrWindow();
+    showJotAiWindow();
   }
 }
 
 async function flushSearchNoteBeforeHide() {
   if (!searchWin || searchWin.isDestroyed()) return;
   try {
-    await searchWin.webContents.executeJavaScript(
+    const result = await searchWin.webContents.executeJavaScript(
       'typeof window.__jotFlushActiveNote === "function" ? window.__jotFlushActiveNote() : null',
       true
     );
+    if (result && result.ok && result.noteId) {
+      const note = db.getNote(result.noteId);
+      if (note && note.text && note.text.trim() && note.folder_id == null) {
+        void autoOrganizeInBackground(result.noteId, note.text);
+      }
+    }
   } catch {
     /* renderer not ready */
+  }
+}
+
+async function autoOrganizeInBackground(noteId, noteText) {
+  try {
+    const userDataDir = app.getPath('userData');
+    const result = await aiOrganize.organizeNoteFromHint(db, {
+      noteId,
+      noteText,
+      organizeHint: 'Auto-file this note into the best folder based on its content. Create a new folder if none fit.',
+      userDataDir,
+    });
+    if (result.skipped || result.error) return;
+    if (searchWin && !searchWin.isDestroyed()) {
+      searchWin.webContents.send('notes-changed');
+    }
+  } catch {
+    /* non-blocking */
   }
 }
 
@@ -494,7 +518,7 @@ function createSearchWindow() {
     width: 800,
     height: 700,
     show: false,
-    title: 'Pakr Notes',
+    title: 'Jot',
     minimizable: true,
     maximizable: true,
     ...macHiddenInsetChrome(),
@@ -771,7 +795,7 @@ function showTimeResurfaceOverlay(note) {
 
   const payload = {
     appKey: '__scheduled__',
-    appName: 'Pakr Notes',
+    appName: 'Jot',
     notes: [{
       id: note.id,
       text: note.text,
@@ -890,7 +914,7 @@ function registerShortcuts() {
   registerShortcut('CommandOrControl+Shift+N', () => void toggleComposeView());
   registerShortcut('CommandOrControl+Shift+R', () => void runManualRecall());
   registerShortcut('CommandOrControl+Shift+P', () => {
-    togglePakrWindow();
+    toggleJotAiWindow();
   });
 }
 
@@ -917,7 +941,7 @@ async function importExistingDbFromMenu() {
         type: 'info',
         title: 'Database Imported',
         message: 'Database imported successfully.',
-        detail: 'Pakr Notes will restart to load the imported database.',
+        detail: 'Jot will restart to load the imported database.',
       });
       app.relaunch();
       app.exit(0);
@@ -1076,7 +1100,7 @@ async function exportDbFromMenu() {
   const stamp = new Date().toISOString().slice(0, 10);
   const result = await dialog.showSaveDialog(parentWindow, {
     title: 'Export database',
-    defaultPath: `pakrai-backup-${stamp}.db`,
+    defaultPath: `jot-backup-${stamp}.db`,
     filters: [
       { name: 'SQLite database', extensions: ['db'] },
       { name: 'All files', extensions: ['*'] },
@@ -1110,7 +1134,7 @@ async function maybeShowFirstLaunchChoice() {
   const parentWindow = searchWin || captureWin || null;
   const result = await dialog.showMessageBox(parentWindow, {
     type: 'question',
-    title: 'Welcome to Pakr Notes',
+    title: 'Welcome to Jot',
     message: 'How do you want to start?',
     detail: 'Start with a blank database, or import an existing database file now.',
     buttons: ['Start Fresh', 'Import Existing DB...'],
@@ -1134,7 +1158,7 @@ async function maybePromptFirstLaunchApiKeySetup(hadFirstLaunchOnboarding) {
     type: 'question',
     title: 'Set up AI organization',
     message: 'Do you want to set your Anthropic API key now?',
-    detail: 'Pakr Notes uses it for manual organization (Organize note, Clean DB). New notes stay Unfiled until you file them yourself or run those tools. Skip and add a key later via Engine menu or File → Anthropic API Key…',
+    detail: 'Jot uses it for manual organization (Organize note, Clean DB). New notes stay Unfiled until you file them yourself or run those tools. Skip and add a key later via Engine menu or File → Anthropic API Key…',
     buttons: ['Set API Key Now', 'Later'],
     defaultId: 0,
     cancelId: 1,
@@ -1378,7 +1402,7 @@ function startRecallStream() {
       }
       return;
     }
-    // Pakr Notes: proactive overlay is notes-first (surfaceEngine). Engine capture cards only via manual recall.
+    // Jot: proactive overlay is notes-first (surfaceEngine). Engine capture cards only via manual recall.
     if (ev.event_type === 'recall.surface') return;
   });
   console.log('[recall] SSE stream subscribed');
@@ -1869,7 +1893,7 @@ function registerIpc() {
   });
   ipcMain.on('window:show-search', (_event, payload) => showSearchWindow(payload || {}));
   ipcMain.on('window:show-capture', showCaptureWindow);
-  ipcMain.on('pakr:open', () => showPakrWindow());
+  ipcMain.on('jot-ai:open', () => showJotAiWindow());
 
   // Recall card actions — map to POST /recall/action then close overlay
   ipcMain.on('recall:dismiss', (_event, eventId) => {
@@ -1936,14 +1960,14 @@ function registerIpc() {
     return { ...result, ...ui };
   });
 
-  ipcMain.handle('pakra:chat', async (_event, payload) => {
+  ipcMain.handle('jot-ai:chat', async (_event, payload) => {
     try {
       const history = Array.isArray(payload && payload.history) ? payload.history : [];
       const message = String((payload && payload.message) || '').trim();
       if (!message) return { reply: 'No message provided.', history };
-      const logDir = path.join(app.getPath('home'), 'Library', 'Logs', 'Pakr Notes');
-      const logFile = path.join(logDir, 'pakr-agent.log');
-      const result = await runPakrAgent(db, {
+      const logDir = path.join(app.getPath('home'), 'Library', 'Logs', 'Jot');
+      const logFile = path.join(logDir, 'jot-ai-agent.log');
+      const result = await runJotAiAgent(db, {
         history,
         message,
         userDataDir: app.getPath('userData'),

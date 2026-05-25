@@ -194,7 +194,8 @@ async function closeEditor() {
   const noteText = editorTextEl.value.trim();
   const hint = editorOrganizeHintEl ? editorOrganizeHintEl.value.trim() : '';
   const noteId = state.activeId;
-  if (noteId && noteText) {
+  const isUnfiled = editorFolderSelect.value === 'unfiled';
+  if (noteId && noteText && (hint || isUnfiled)) {
     void autoOrganizeNote(noteId, noteText, hint);
   }
 
@@ -250,7 +251,9 @@ function dockInlineEditor() {
   if (editorOpen) {
     const row = resultsEl.querySelector(`.result-row[data-id="${state.activeId}"]`);
     if (row && row.nextElementSibling !== editorEl) {
+      const hadFocus = editorEl.contains(document.activeElement) ? document.activeElement : null;
       row.insertAdjacentElement('afterend', editorEl);
+      if (hadFocus) hadFocus.focus();
     }
     return;
   }
@@ -1645,23 +1648,21 @@ document.addEventListener('keydown', (event) => {
   }
 
   if ((event.key === 'Delete' || event.key === 'Backspace') && state.listFocusId != null) {
-    if (event.target === editorTextEl || event.target === queryInput) return;
+    if (state.activeId != null && !editorEl.classList.contains('hidden')) return;
+    if (isTypingTarget(event.target)) return;
     if (event.target === appSelect) return;
     if (event.target.closest?.('#links')) return;
     if (event.target.closest?.('.editor-actions')) return;
     if (event.target.closest?.('.bulk-actions')) return;
     if (event.target.closest?.('.result-select')) return;
-    const tag = event.target.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     event.preventDefault();
     void removeNoteById(state.listFocusId);
     return;
   }
 
   if ((event.key === 'Delete' || event.key === 'Backspace') && state.selectedIds.size > 1) {
-    if (event.target === editorTextEl || event.target === queryInput) return;
-    const tag = event.target.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (state.activeId != null && !editorEl.classList.contains('hidden')) return;
+    if (isTypingTarget(event.target)) return;
     event.preventDefault();
     void removeSelectedNotes();
     return;
@@ -1790,8 +1791,8 @@ init().catch((error) => {
 const notesPanel = document.getElementById('notes-panel');
 const recordingsPanel = document.getElementById('recordings-panel');
 function switchTab(name) {
-  if (name === 'pakr') {
-    window.mvp.openPakr();
+  if (name === 'jot-ai') {
+    window.mvp.openJotAi();
     return;
   }
   const isNotes = name === 'notes';
@@ -1819,14 +1820,14 @@ document.querySelectorAll('.tab[data-tab]').forEach((btn) => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 
-document.getElementById('tab-pakr')?.addEventListener('click', () => {
-  window.mvp.openPakr();
+document.getElementById('tab-jot-ai')?.addEventListener('click', () => {
+  window.mvp.openJotAi();
 });
 
 // ⌘⇧P shortcut from main process
 window.mvp.onSwitchTab((tab) => switchTab(tab));
 
-// Pakr is now a separate window — see pakr.html / pakr-renderer.js
+// Jot AI is a separate window — see jot-ai.html / jot-ai-renderer.js
 
 // Unified scope chips removed — Notes is notes-only; screen is on Recordings tab.
 

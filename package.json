@@ -1,7 +1,7 @@
 {
-  "name": "pakrai",
+  "name": "jot",
   "version": "2.2.0",
-  "description": "Pakr Notes — local-first notes with screen recording, proactive resurfacing, and Pakr agent",
+  "description": "Jot — local-first notes with screen recording, proactive resurfacing, and AI agent",
   "main": "app-main.js",
   "scripts": {
     "start": "electron .",
@@ -17,8 +17,8 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.pakrai.app",
-    "productName": "Pakr Notes",
+    "appId": "com.jot.app",
+    "productName": "Jot",
     "files": [
       "app-main.js",
       "preload.js",
@@ -35,7 +35,7 @@
       "overlayCommand.js",
       "timeParser.js",
       "resurfaceScheduler.js",
-      "pakr/**/*",
+      "jot-ai/**/*",
       "integration/**/*",
       "renderer/**/*",
       "overlay/**/*",
@@ -58,20 +58,20 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "artifactName": "PakrNotes-${version}.${ext}",
+      "artifactName": "Jot-${version}.${ext}",
       "target": [
         "dmg",
         "zip"
       ],
       "extendInfo": {
-        "NSAppleEventsUsageDescription": "Pakr Notes reads the frontmost application to surface relevant notes.",
-        "NSScreenCaptureUsageDescription": "Pakr Notes records your laptop screen locally so you can search what you have seen. It does not use your microphone or camera.",
-        "NSAutomationDescription": "Pakr Notes uses Automation to read the currently active app name for note surfacing."
+        "NSAppleEventsUsageDescription": "Jot reads the frontmost application to surface relevant notes.",
+        "NSScreenCaptureUsageDescription": "Jot records your laptop screen locally so you can search what you have seen. It does not use your microphone or camera.",
+        "NSAutomationDescription": "Jot uses Automation to read the currently active app name for note surfacing."
       }
     },
     "dmg": {
-      "title": "Install Pakr Notes",
-      "artifactName": "PakrNotes-${version}.${ext}",
+      "title": "Install Jot",
+      "artifactName": "Jot-${version}.${ext}",
       "window": {
         "width": 540,
         "height": 380

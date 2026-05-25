@@ -1845,9 +1845,9 @@ mark.search-hl {
   padding: 0 1px;
 }
 
-/* ── Pakr agent panel ──────────────────────────────────────────────────────── */
+/* ── Jot AI agent panel ──────────────────────────────────────────────────────── */
 
-#pakr-panel {
+#jot-ai-panel {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -1855,7 +1855,7 @@ mark.search-hl {
   -webkit-app-region: no-drag;
 }
 
-.pakr-chat {
+.jot-ai-chat {
   flex: 1 1 0;
   overflow-y: auto;
   padding: 12px 14px 8px;
@@ -1865,7 +1865,7 @@ mark.search-hl {
   -webkit-overflow-scrolling: touch;
 }
 
-.pakr-empty {
+.jot-ai-empty {
   color: rgba(255, 255, 255, 0.38);
   font-size: 13px;
   line-height: 1.55;
@@ -1874,13 +1874,13 @@ mark.search-hl {
   padding: 24px 12px;
 }
 
-.pakr-empty-example {
+.jot-ai-empty-example {
   display: block;
   margin-top: 8px;
   font-size: 12px;
 }
 
-.pakr-msg {
+.jot-ai-msg {
   max-width: 90%;
   padding: 8px 12px;
   border-radius: 12px;
@@ -1890,21 +1890,21 @@ mark.search-hl {
   white-space: pre-wrap;
 }
 
-.pakr-msg-user {
+.jot-ai-msg-user {
   align-self: flex-end;
   background: #0a84ff;
   color: #fff;
   border-bottom-right-radius: 3px;
 }
 
-.pakr-msg-assistant {
+.jot-ai-msg-assistant {
   align-self: flex-start;
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.88);
   border-bottom-left-radius: 3px;
 }
 
-.pakr-msg-thinking {
+.jot-ai-msg-thinking {
   align-self: flex-start;
   background: rgba(255, 255, 255, 0.04);
   color: rgba(255, 255, 255, 0.35);
@@ -1914,7 +1914,7 @@ mark.search-hl {
   padding: 6px 10px;
 }
 
-.pakr-confirm-row {
+.jot-ai-confirm-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1924,17 +1924,17 @@ mark.search-hl {
   flex-shrink: 0;
 }
 
-.pakr-confirm-row.hidden {
+.jot-ai-confirm-row.hidden {
   display: none;
 }
 
-.pakr-confirm-summary {
+.jot-ai-confirm-summary {
   flex: 1;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.75);
 }
 
-.pakr-confirm-btn {
+.jot-ai-confirm-btn {
   background: #ff9f0a;
   color: #000;
   border: none;
@@ -1946,11 +1946,11 @@ mark.search-hl {
   flex-shrink: 0;
 }
 
-.pakr-confirm-btn:hover {
+.jot-ai-confirm-btn:hover {
   background: #ffb340;
 }
 
-.pakr-cancel-btn {
+.jot-ai-cancel-btn {
   background: transparent;
   color: rgba(255, 255, 255, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -1961,11 +1961,11 @@ mark.search-hl {
   flex-shrink: 0;
 }
 
-.pakr-cancel-btn:hover {
+.jot-ai-cancel-btn:hover {
   color: rgba(255, 255, 255, 0.8);
 }
 
-.pakr-input-row {
+.jot-ai-input-row {
   display: flex;
   gap: 8px;
   align-items: flex-end;
@@ -1974,7 +1974,7 @@ mark.search-hl {
   flex-shrink: 0;
 }
 
-.pakr-input {
+.jot-ai-input {
   flex: 1;
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1989,13 +1989,13 @@ mark.search-hl {
   font-family: inherit;
 }
 
-.pakr-input:focus {
+.jot-ai-input:focus {
   outline: none;
   border-color: rgba(10, 132, 255, 0.5);
   background: rgba(255, 255, 255, 0.09);
 }
 
-.pakr-send-btn {
+.jot-ai-send-btn {
   background: #0a84ff;
   color: #fff;
   border: none;
@@ -2008,11 +2008,11 @@ mark.search-hl {
   height: 36px;
 }
 
-.pakr-send-btn:hover {
+.jot-ai-send-btn:hover {
   background: #409cff;
 }
 
-.pakr-send-btn:disabled {
+.jot-ai-send-btn:disabled {
   background: rgba(10, 132, 255, 0.4);
   cursor: not-allowed;
 }
