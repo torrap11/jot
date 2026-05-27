@@ -1,64 +1,62 @@
 # Jot
 
-Local-first macOS notes app with AI-powered organization, proactive recall, and an in-app AI agent.
+**Jot** is an advanced local-first macOS notes app: capture ideas while you work, organize them with AI, and get the right note back at the right time—without an account or cloud sync.
 
-> **Screen Engine Status:** 🚧 The screen recording engine is under construction and not available in this release. Notes, folders, AI filing, and Jot AI all work fully. Screen recording is coming soon.
+> **Screen engine:** 🚧 Under construction in this release. Notes, folders, AI auto-filing, proactive recall, and **Jot AI** work fully. Continuous screen recording is coming soon.
 
-## Features
+## What makes Jot different
 
-1. **Proactive Recall** — automatically surfaces relevant notes as an overlay when you switch apps, scored by link matches, keyword relevance, and time-of-day context
-2. **Natural Language Remind Workflows** — "remind me to check deploy when I open Cursor" creates a linked note that triggers when you actually open that app
-3. **AI Auto-Filing & Custom Prompts** — every note auto-files on save; batch-file or reorder notes with natural language prompts ("group personal vs work", "oldest first")
-4. **Jot AI Agent** — floating chat assistant (⌘⇧P) with full notes tool access for reorganizing, searching, and managing your notes
-5. **Global Shortcuts** — system-wide shortcuts for instant capture and recall from any app
+1. **Proactive recall** — Notes surface in a corner overlay when you switch apps, matched by app links, keywords, and context—not only when you search.
+2. **Natural-language remind workflows** — e.g. *"remind me to check deploy when I open Cursor"* creates a note that resurfaces when that app is frontmost.
+3. **AI auto-filing** — New notes file into folders on save (optional Anthropic API key). Batch **File Notes** and custom organization prompts.
+4. **Jot AI** — Floating assistant (⌘⇧P) that knows the product and can search, move, tag, and reorganize your notes via tools.
+5. **System-wide shortcuts** — ⌘P search, ⌘N quick capture, ⌘⇧R manual recall—from any app, tray-less.
 
-## Components
+## Download (macOS)
 
-| Component | Description |
-|-----------|-------------|
-| **Notes** | Create, search, edit, attach images/files. Folder tree with drag-to-refile. |
-| **Screen Recording** | 🚧 Under construction. Continuous laptop screen capture (no audio/camera). |
-| **Proactive Recall** | App-switch watcher + surface engine + overlay popup with dismiss/snooze/save. |
-| **Jot AI Agent** | Floating chat window (⌘⇧P) with tool-call access to notes DB. |
-| **AI Organization** | Auto-files notes on close, batch File Notes, NL display/sort prompts. |
+**Latest release:** [github.com/parthha12/jot/releases/latest](https://github.com/parthha12/jot/releases/latest)
 
-## Keyboard Shortcuts
+### Install in 60 seconds
+
+1. Download **`Jot-<version>.dmg`** from the [Releases](https://github.com/parthha12/jot/releases) page.
+2. Open the DMG and drag **Jot** into **Applications**.
+3. In **Terminal**, remove the quarantine flag (required until we ship a notarized build):
+
+```bash
+xattr -cr "/Applications/Jot.app"
+```
+
+4. Open **Jot** from Applications.
+
+**Without Terminal:** Right-click **Jot** in Applications → **Open** → **Open**. If macOS still blocks it: **System Settings → Privacy & Security → Open Anyway**.
+
+Full install and troubleshooting: [INSTALL.md](./INSTALL.md)
+
+## Keyboard shortcuts
 
 | Shortcut | Action |
 |----------|--------|
-| `⌘P` | Toggle notes window |
-| `⌘N` | Quick capture (new note) |
-| `⌘⇧N` | Compose new note in search window |
-| `⌘⇧R` | Manual recall trigger |
-| `⌘⇧P` | Open Jot AI agent |
-| `Escape` | Save and close note editor |
+| ⌘P | Toggle notes window |
+| ⌘N | Quick capture |
+| ⌘⇧N | Compose in main window |
+| ⌘⇧R | Manual recall |
+| ⌘⇧P | Open Jot AI |
+| Esc | Save and close note editor |
 
-## Quick Start
+## Develop
 
 ```bash
-cd jot
 npm install
-export SCREENPIPE_API_KEY=dev-key-123
 npm start
-```
-
-## Tests
-
-```bash
 npm test
-npm run preflight   # before release build
+npm run preflight   # before release
+npm run dist:arm64  # → dist/Jot-<version>.dmg
 ```
 
-## Release Build
+## Permissions (macOS)
 
-```bash
-npm run dist:arm64
-```
+- **Automation** — frontmost app for resurfacing
+- **Accessibility** — recommended
+- **Screen Recording** — 🚧 engine under construction
 
-Artifact: `dist/Jot-<version>.dmg`
-
-## macOS Permissions
-
-- **Automation** — frontmost app detection for proactive resurfacing
-- **Accessibility** — recommended for full UI element capture
-- **Screen Recording** — 🚧 under construction (not required for current release)
+Data: `~/Library/Application Support/jot/`
