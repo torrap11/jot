@@ -10,6 +10,8 @@ const pendingImagesEl = document.getElementById('capture-pending-images');
 const workflowStatusEl = document.getElementById('capture-workflow-status');
 
 const NOTE_FILE_WHITELIST_EXTS = ['pdf', 'md', 'rmd', 'txt'];
+const AUTO_FILE_HINT =
+  'Auto-file this note into the best folder based on its content. Create a new folder if none fit.';
 let pendingImageDataUrls = [];
 let pendingFileAttachments = [];
 /** Prevents overlapping saves (double Enter, key repeat, double button click). */
@@ -209,6 +211,24 @@ async function buildSavePayloadFromDraft() {
   };
 }
 
+async function maybeAutoOrganizeAfterCapture(noteId, saveText, payload) {
+  const folderValue = payload.folderValue || 'unfiled';
+  const isUnfiled = folderValue === 'unfiled';
+  const userHint = String(payload.organizeHint || '').trim();
+  const text = String(saveText || '').trim();
+  if (!noteId || !text) return;
+  if (!userHint && !isUnfiled) return;
+  try {
+    await window.mvp.organizeNoteFromHint({
+      noteId,
+      noteText: text,
+      organizeHint: userHint || AUTO_FILE_HINT,
+    });
+  } catch {
+    /* non-blocking — missing API key or AI errors */
+  }
+}
+
 async function runCaptureSavePipeline(payload) {
   const appKey = await window.mvp.resolveAppKey(payload.appRaw);
   const note = await window.mvp.saveCapture(payload.saveText, appKey);
@@ -217,6 +237,7 @@ async function runCaptureSavePipeline(payload) {
   const hint = String(payload.organizeHint || '').trim();
   if (hint) await window.mvp.setOrganizeHint(note.id, hint);
   await applyManualFolder(note.id, payload.folderValue);
+  void maybeAutoOrganizeAfterCapture(note.id, payload.saveText, payload);
 }
 
 async function finishCaptureAfterSave() {
@@ -258,7 +279,9 @@ async function submitWorkflow() {
     const noteId = result.note?.id;
     if (noteId) {
       const folderValue = captureFolderSelect?.value || 'unfiled';
+      const organizeHint = organizeHintInput ? organizeHintInput.value.trim() : '';
       await applyManualFolder(noteId, folderValue);
+      void maybeAutoOrganizeAfterCapture(noteId, text, { folderValue, organizeHint });
       if (result.appQuery) appInput.value = result.appQuery;
     }
     await finishCaptureAfterSave();
@@ -278,7 +301,9 @@ async function submitTimeReminder(parsed) {
     }
     await window.mvp.setResurfaceAt(note.id, parsed.resurface_at);
     const folderValue = captureFolderSelect?.value || 'unfiled';
+    const organizeHint = organizeHintInput ? organizeHintInput.value.trim() : '';
     await applyManualFolder(note.id, folderValue);
+    void maybeAutoOrganizeAfterCapture(note.id, parsed.reminderText, { folderValue, organizeHint });
     setWorkflowStatus(`Scheduled: ${parsed.label}`);
     await new Promise((r) => setTimeout(r, 700));
     await finishCaptureAfterSave();
@@ -459,7 +484,10 @@ attachImageBtn?.addEventListener('click', async () => {
     if (note?.id) {
       await window.mvp.addNoteImagesFromPicker(note.id);
       await attachPendingToNote(note.id);
-      await applyManualFolder(note.id);
+      const folderValue = captureFolderSelect?.value || 'unfiled';
+      const organizeHint = organizeHintInput ? organizeHintInput.value.trim() : '';
+      await applyManualFolder(note.id, folderValue);
+      void maybeAutoOrganizeAfterCapture(note.id, text, { folderValue, organizeHint });
     }
   } finally {
     captureBusy = false;
@@ -488,7 +516,10 @@ attachFileBtn?.addEventListener('click', async () => {
     if (note && note.id) {
       await window.mvp.addNoteFilesFromPicker(note.id);
       await attachPendingToNote(note.id);
-      await applyManualFolder(note.id);
+      const folderValue = captureFolderSelect?.value || 'unfiled';
+      const organizeHint = organizeHintInput ? organizeHintInput.value.trim() : '';
+      await applyManualFolder(note.id, folderValue);
+      void maybeAutoOrganizeAfterCapture(note.id, text, { folderValue, organizeHint });
     }
   } finally {
     captureBusy = false;
