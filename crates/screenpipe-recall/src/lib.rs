@@ -11,9 +11,12 @@ mod context;
 mod decision;
 mod policy;
 mod retrieval;
+pub mod service;
+pub mod tokenizer;
 
 pub use config::*;
 pub use context::*;
 pub use decision::*;
 pub use policy::*;
 pub use retrieval::*;
+pub use tokenizer::{build_fts_query, build_fts_query_relaxed, tokenize};

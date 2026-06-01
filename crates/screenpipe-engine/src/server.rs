@@ -197,6 +197,10 @@ pub struct AppState {
     pub cloud_token: Arc<tokio::sync::RwLock<Option<String>>>,
     /// Unified credential store for OAuth tokens, API keys, etc.
     pub secret_store: Option<Arc<screenpipe_secrets::SecretStore>>,
+    /// Proactive recall service — evaluates candidates on app-switch.
+    pub recall_service: Option<Arc<screenpipe_recall::service::RecallService>>,
+    /// SSE broadcast channel for recall surface events.
+    pub recall_sse_tx: tokio::sync::broadcast::Sender<screenpipe_recall::service::RecallSseEvent>,
 }
 
 pub struct SCServer {
@@ -469,6 +473,18 @@ impl SCServer {
             });
         }
 
+        // ── Proactive recall — create service before AppState so both share the tx ──
+        let (recall_sse_tx, _recall_sse_rx_init) =
+            tokio::sync::broadcast::channel::<screenpipe_recall::service::RecallSseEvent>(256);
+        let recall_service = Arc::new(screenpipe_recall::service::RecallService::new(
+            self.db.clone(),
+            recall_sse_tx.clone(),
+        ));
+        {
+            let svc = recall_service.clone();
+            tokio::spawn(async move { svc.run().await });
+        }
+
         let app_state = Arc::new(AppState {
             db: self.db.clone(),
             audio_manager: self.audio_manager.clone(),
@@ -541,6 +557,8 @@ impl SCServer {
             api_auth_key: self.api_auth_key.clone(),
             cloud_token: self.cloud_token.clone(),
             secret_store: self.secret_store.clone(),
+            recall_sse_tx: recall_sse_tx.clone(),
+            recall_service: Some(recall_service.clone()),
         });
 
         // Populate the registry so /connections/browsers shows both kinds
@@ -868,6 +886,27 @@ impl SCServer {
 
         // NOTE: websockets and sse is not supported by openapi so we move it down here
         router
+            // Proactive recall routes
+            .route(
+                "/recall/status",
+                get(crate::routes::recall::recall_status),
+            )
+            .route(
+                "/recall/evaluate",
+                axum::routing::post(crate::routes::recall::recall_evaluate),
+            )
+            .route(
+                "/recall/action",
+                axum::routing::post(crate::routes::recall::recall_action),
+            )
+            .route(
+                "/recall/stream",
+                get(crate::routes::recall::recall_stream),
+            )
+            .route(
+                "/recall/settings",
+                axum::routing::post(crate::routes::recall::recall_settings),
+            )
             .route("/stream/frames", get(stream_frames_handler))
             .route("/ws/events", get(ws_events_handler))
             .route("/ws/health", get(ws_health_handler))

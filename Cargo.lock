@@ -1342,33 +1342,15 @@ dependencies = [
 
 [[package]]
 name = "cidre"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aeb5b1ace98faf1a55e3631d63427f267897cfab7b65b1d5928cb0b8e6a4a194"
-dependencies = [
- "cidre-macros 0.4.0",
- "half",
- "parking_lot",
- "tokio",
-]
-
-[[package]]
-name = "cidre"
 version = "0.15.1"
 source = "git+https://github.com/yury/cidre.git#b8631d2857e5d039594db7127cf5e3528016af90"
 dependencies = [
  "cc",
- "cidre-macros 0.5.0",
+ "cidre-macros",
  "half",
  "parking_lot",
  "tokio",
 ]
-
-[[package]]
-name = "cidre-macros"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5da2cdee573cf967cf4fec1f95f12a16dce31efb6d104238a8cb114cbdae1780"
 
 [[package]]
 name = "cidre-macros"
@@ -1724,7 +1706,7 @@ version = "0.15.3"
 source = "git+https://github.com/divanshu-go/cpal.git?branch=windows-aec#eeae0269bec7b4fc6e21c461624a0fa0e7acdc82"
 dependencies = [
  "alsa",
- "cidre 0.15.1",
+ "cidre",
  "core-foundation-sys",
  "coreaudio-rs",
  "dasp_sample",
@@ -7682,7 +7664,7 @@ name = "sck-rs"
 version = "0.1.0"
 source = "git+https://github.com/screenpipe/sck-rs#c0658125fe6e3d2c8e724cbda270d786df61af2d"
 dependencies = [
- "cidre 0.15.1",
+ "cidre",
  "image",
  "once_cell",
  "thiserror 1.0.69",
@@ -7710,7 +7692,7 @@ dependencies = [
  "arboard",
  "arc-swap",
  "chrono",
- "cidre 0.13.1",
+ "cidre",
  "crossbeam-channel",
  "dirs 5.0.1",
  "evdev",
@@ -7755,7 +7737,7 @@ dependencies = [
  "bytemuck",
  "bytes",
  "chrono",
- "cidre 0.15.1",
+ "cidre",
  "clap",
  "cpal",
  "criterion",
@@ -7957,7 +7939,7 @@ dependencies = [
  "base64 0.22.1",
  "bincode",
  "chrono",
- "cidre 0.15.1",
+ "cidre",
  "clap",
  "colored",
  "console-subscriber",
@@ -7992,6 +7974,7 @@ dependencies = [
  "screenpipe-core",
  "screenpipe-db",
  "screenpipe-events",
+ "screenpipe-recall",
  "screenpipe-redact",
  "screenpipe-screen",
  "screenpipe-secrets",
@@ -8052,6 +8035,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "screenpipe-recall"
+version = "0.3.336"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "futures",
+ "screenpipe-db",
+ "screenpipe-events",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+]
+
+[[package]]
 name = "screenpipe-redact"
 version = "0.3.336"
 dependencies = [
@@ -8101,7 +8100,7 @@ dependencies = [
  "atspi-proxies",
  "base64 0.22.1",
  "chrono",
- "cidre 0.15.1",
+ "cidre",
  "core-foundation 0.10.1",
  "core-graphics",
  "criterion",

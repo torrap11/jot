@@ -4,6 +4,8 @@
 
 This repository is **[Screenpipe](https://github.com/screenpipe/screenpipe)** plus proactive-recall research, Claude Code build prompts, and stub crate `crates/screenpipe-recall`.
 
+**Screenpipe × Jot:** open the multi-repo workspace at `../screenpipe-x-jot/screenpipe-x-jot.code-workspace` (sibling folder under `github-real/`).
+
 ## Repo layout (verified)
 
 | Path | Purpose |

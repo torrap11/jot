@@ -292,6 +292,19 @@ pub async fn start_ui_recording(
                                 {
                                     None
                                 } else {
+                                    // Publish to screenpipe_events so RecallService can subscribe.
+                                    let _ = screenpipe_events::send_event(
+                                        "app_switch",
+                                        serde_json::json!({
+                                            "app_name": &app,
+                                            "bundle_id": null,
+                                            "window_title": db_event.window_title,
+                                            "browser_url": db_event.browser_url,
+                                            "document_path": null,
+                                            "text_excerpt": null,
+                                            "occurred_at": chrono::Utc::now().to_rfc3339(),
+                                        }),
+                                    );
                                     Some(CaptureTrigger::AppSwitch { app_name: app })
                                 }
                             }
