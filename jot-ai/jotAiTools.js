@@ -49,8 +49,8 @@ function searchNotes(db, { query, limit = 40 } = {}) {
   };
 }
 
-function listNotes(db, { folder_id, limit = 100 } = {}) {
-  const cap = Math.min(Math.max(1, Number(limit) || 100), 200);
+function listNotes(db, { folder_id, limit = 50 } = {}) {
+  const cap = Math.min(Math.max(1, Number(limit) || 50), 80);
   const fid = folder_id == null ? 'all' : folder_id;
   const rows = db.listRecent(cap, fid);
   return {
@@ -116,17 +116,11 @@ function getNote(db, { note_id } = {}) {
   };
 }
 
-function moveToFolder(db, { note_ids, folder_id, confirmed = false } = {}) {
+function moveToFolder(db, { note_ids, folder_id } = {}) {
   const ids = (Array.isArray(note_ids) ? note_ids : [])
     .map(Number)
     .filter((n) => Number.isFinite(n) && n > 0);
   if (ids.length === 0) return { error: 'note_ids must be a non-empty array of integers' };
-  if (ids.length > 10 && !confirmed) {
-    return {
-      confirmRequired: true,
-      summary: `Move ${ids.length} notes to folder ${folder_id == null ? 'Unfiled' : folder_id}`,
-    };
-  }
   const target = folder_id == null ? 'unfiled' : folder_id;
   let moved = 0;
   for (const id of ids) {
@@ -164,19 +158,13 @@ function setTags(db, { note_ids, tags } = {}) {
   return { updated, tags: tagList };
 }
 
-function mergeNotes(db, { target_id, source_ids, confirmed = false } = {}) {
+function mergeNotes(db, { target_id, source_ids } = {}) {
   const tid = Number(target_id);
   if (!Number.isFinite(tid) || tid < 1) return { error: 'target_id is required' };
   const sids = (Array.isArray(source_ids) ? source_ids : [])
     .map(Number)
     .filter((n) => Number.isFinite(n) && n > 0 && n !== tid);
   if (sids.length === 0) return { error: 'source_ids must have at least one valid note id' };
-  if (sids.length > 2 && !confirmed) {
-    return {
-      confirmRequired: true,
-      summary: `Merge ${sids.length} notes into note ${tid}`,
-    };
-  }
   const target = db.getNote(tid);
   if (!target) return { error: `Target note ${tid} not found` };
   const sourceBodies = sids
@@ -265,8 +253,7 @@ const TOOL_SCHEMAS = [
   },
   {
     name: 'move_to_folder',
-    description:
-      'Move notes to a folder. Returns {confirmRequired: true} when moving >10 notes without confirmed=true.',
+    description: 'Move notes to a folder. Executes immediately — no confirmation step.',
     input_schema: {
       type: 'object',
       properties: {
@@ -277,10 +264,6 @@ const TOOL_SCHEMAS = [
         },
         folder_id: {
           description: 'Destination folder id (integer), or null for Unfiled',
-        },
-        confirmed: {
-          type: 'boolean',
-          description: 'Set true after user confirms bulk moves of >10 notes',
         },
       },
       required: ['note_ids'],
@@ -309,7 +292,7 @@ const TOOL_SCHEMAS = [
   {
     name: 'merge_notes',
     description:
-      'Merge source notes into target. Concatenates bodies and deletes sources. Returns {confirmRequired: true} when merging >2 sources without confirmed=true.',
+      'Merge source notes into target. Concatenates bodies and deletes sources. Executes immediately.',
     input_schema: {
       type: 'object',
       properties: {
@@ -318,10 +301,6 @@ const TOOL_SCHEMAS = [
           type: 'array',
           items: { type: 'integer' },
           description: 'Note ids to merge and delete',
-        },
-        confirmed: {
-          type: 'boolean',
-          description: 'Set true after user confirms merging >2 source notes',
         },
       },
       required: ['target_id', 'source_ids'],

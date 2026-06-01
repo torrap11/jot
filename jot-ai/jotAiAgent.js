@@ -14,6 +14,12 @@ const { readAnthropicCredentials } = require('../aiOrganize');
 const { TOOL_SCHEMAS, TOOL_MAP, findShareables } = require('./jotAiTools');
 const { getJotAiSystemPrompt } = require('./jotAiProductGuide');
 const { getMyJotRules, updateMyJotRules } = require('./jotAiPreferences');
+const {
+  compactToolResultJson,
+  pruneOldToolResults,
+  trimChatHistory,
+  formatRateLimitMessage,
+} = require('./jotAiCompact');
 
 function looksLikeNoteLookup(message) {
   const m = String(message || '').toLowerCase();
@@ -50,6 +56,38 @@ function buildNoteLookupPrefetch(db, message) {
 }
 
 const MAX_TOOL_ROUNDS = 12;
+const JOT_AI_DEFAULT_MODEL = 'claude-haiku-4-5';
+
+function readEnvKey(userDataDir, key) {
+  try {
+    const raw = fs.readFileSync(path.join(userDataDir, '.env'), 'utf8');
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq <= 0) continue;
+      const k = trimmed.slice(0, eq).trim();
+      if (k !== key) continue;
+      let val = trimmed.slice(eq + 1).trim();
+      if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+      ) {
+        val = val.slice(1, -1);
+      }
+      return val.trim();
+    }
+  } catch {
+    // no .env
+  }
+  return '';
+}
+
+function readJotAiModel(userDataDir) {
+  const { apiKey } = readAnthropicCredentials(userDataDir);
+  const jotModel = userDataDir ? readEnvKey(userDataDir, 'JOT_AI_MODEL') : '';
+  return { apiKey, model: jotModel || JOT_AI_DEFAULT_MODEL };
+}
 
 function appendLog(logFile, message) {
   if (!logFile) return;
@@ -61,20 +99,42 @@ function appendLog(logFile, message) {
   }
 }
 
-async function callAnthropicWithTools({ apiKey, model, system, tools, messages }) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({ model, max_tokens: 4096, system, tools, messages }),
-  });
+function formatAnthropicFetchError(err) {
+  const code = err && (err.cause?.code || err.code);
+  const detail = code ? ` (${code})` : '';
+  if (err && err.message === 'fetch failed') {
+    return `Could not reach Anthropic${detail}. Check Wi‑Fi/VPN, then retry. Key: File → Anthropic API Key…`;
+  }
+  return err && err.message ? err.message : String(err);
+}
+
+async function callAnthropicWithTools({ apiKey, model, system, tools, messages, _retry429 = false }) {
+  let res;
+  try {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({ model, max_tokens: 2048, system, tools, messages }),
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch (err) {
+    throw new Error(formatAnthropicFetchError(err));
+  }
   const data = await res.json().catch(() => ({}));
+  if (res.status === 429 && !_retry429) {
+    const retryAfter = Number(res.headers.get('retry-after')) || 45;
+    await new Promise((r) => setTimeout(r, Math.min(retryAfter, 60) * 1000));
+    return callAnthropicWithTools({ apiKey, model, system, tools, messages, _retry429: true });
+  }
   if (!res.ok) {
     const msg = (data.error && data.error.message) || data.message || res.statusText;
-    throw new Error(msg || `Anthropic API error ${res.status}`);
+    const err = new Error(msg || `Anthropic API error ${res.status}`);
+    err.status = res.status;
+    throw err;
   }
   return { content: data.content || [], stop_reason: data.stop_reason };
 }
@@ -90,7 +150,7 @@ async function callAnthropicWithTools({ apiKey, model, system, tools, messages }
  * @returns {Promise<{reply: string, history: Array, confirmRequired?: object}>}
  */
 async function runJotAiAgent(db, { history = [], message, userDataDir, logFile } = {}) {
-  const { apiKey, model } = readAnthropicCredentials(userDataDir);
+  const { apiKey, model } = readJotAiModel(userDataDir);
   if (!apiKey) {
     return {
       reply: 'No API key configured. Go to File → Anthropic API Key…, paste your Anthropic key, and save.',
@@ -98,17 +158,16 @@ async function runJotAiAgent(db, { history = [], message, userDataDir, logFile }
     };
   }
 
-  const trimmedHistory = (history || [])
-    .filter((m) => m && (m.role === 'user' || m.role === 'assistant'))
-    .slice(-16);
+  const trimmedHistory = trimChatHistory(history, 8);
 
   const prefetch = buildNoteLookupPrefetch(db, message);
   const userContent = prefetch
-    ? `${String(message || '')}\n\n[System: pre-searched your note library — ${prefetch.length} hit(s). Use these ids; call get_note for full text. Do not say nothing was found if matches exist.]\n${JSON.stringify(prefetch, null, 2)}`
+    ? `${String(message || '')}\n\n[System: ${prefetch.length} pre-search hit(s). Use ids; call get_note only when needed.]\n${JSON.stringify(prefetch.map((n) => ({ id: n.id, title: n.title, folder_name: n.folder_name })))}`
     : String(message || '');
   const messages = [...trimmedHistory, { role: 'user', content: userContent }];
   let confirmRequired = null;
   let rounds = 0;
+  const system = getJotAiSystemPrompt(userDataDir);
 
   while (rounds < MAX_TOOL_ROUNDS) {
     rounds++;
@@ -117,12 +176,12 @@ async function runJotAiAgent(db, { history = [], message, userDataDir, logFile }
       response = await callAnthropicWithTools({
         apiKey,
         model,
-        system: getJotAiSystemPrompt(userDataDir),
+        system,
         tools: TOOL_SCHEMAS,
-        messages,
+        messages: pruneOldToolResults(messages),
       });
     } catch (err) {
-      return { reply: `Error: ${err.message}`, history };
+      return { reply: `Error: ${formatRateLimitMessage(err)}`, history: trimmedHistory };
     }
 
     const { content, stop_reason } = response;
@@ -164,7 +223,7 @@ async function runJotAiAgent(db, { history = [], message, userDataDir, logFile }
       toolResults.push({
         type: 'tool_result',
         tool_use_id: block.id,
-        content: JSON.stringify(result),
+        content: compactToolResultJson(toolName, result),
       });
     }
     messages.push({ role: 'user', content: toolResults });

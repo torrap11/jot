@@ -376,6 +376,176 @@
       color: var(--dim);
     }
     .action-btn.never-app:hover { color: var(--danger); border-color: var(--danger); }
+
+    body.is-note-expanded #notes-container,
+    body.is-note-expanded #command-panel,
+    body.is-note-expanded #progress-track {
+      display: none;
+    }
+
+    #note-expanded {
+      display: none;
+      flex: 1;
+      min-height: 0;
+      flex-direction: column;
+      padding: 10px 12px 12px;
+    }
+
+    body.is-note-expanded #note-expanded {
+      display: flex;
+    }
+
+    #expanded-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+
+    #expanded-label {
+      font-size: 11px;
+      color: var(--dim);
+      letter-spacing: 0.02em;
+    }
+
+    #expanded-close {
+      background: none;
+      border: none;
+      color: var(--dim);
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    #expanded-close:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+    }
+
+    #expanded-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      margin-bottom: 10px;
+    }
+
+    #expanded-scroll::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    #expanded-scroll::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.22);
+      border-radius: 4px;
+    }
+
+    .note-expanded-title {
+      display: none;
+    }
+
+    #expanded-editor {
+      width: 100%;
+      min-height: 120px;
+      box-sizing: border-box;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.22);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 14.5px;
+      line-height: 1.55;
+      padding: 10px 12px;
+      resize: vertical;
+      outline: none;
+    }
+
+    #expanded-editor:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-dim);
+    }
+
+    .note-expanded-body {
+      font-size: 14.5px;
+      color: var(--text);
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    #expanded-footer {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    #expanded-input-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #expanded-input {
+      flex: 1;
+      min-width: 0;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 12px;
+      padding: 7px 9px;
+      outline: none;
+    }
+
+    #expanded-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-dim);
+    }
+
+    #expanded-open-jot {
+      flex-shrink: 0;
+      border: 1px solid rgba(10, 132, 255, 0.35);
+      border-radius: 8px;
+      background: rgba(10, 132, 255, 0.12);
+      color: var(--accent);
+      font-family: var(--font-ui);
+      font-size: 11.5px;
+      font-weight: 500;
+      padding: 7px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.12s, border-color 0.12s;
+    }
+
+    #expanded-open-jot:hover {
+      background: rgba(10, 132, 255, 0.2);
+      border-color: rgba(10, 132, 255, 0.5);
+    }
+
+    #expanded-status {
+      font-size: 10px;
+      color: var(--dim);
+      min-height: 14px;
+      line-height: 1.35;
+    }
+
+    #expanded-status.is-error {
+      color: #ff8a80;
+    }
+
+    #expanded-status.is-ok {
+      color: var(--success);
+    }
   </style>
 </head>
 <body>
@@ -385,7 +555,7 @@
       <span id="header-label" aria-live="polite">· relevant notes</span>
     </div>
     <div id="header-right">
-      <span class="kbd-hint">dbl-click command · K open · S snooze · D done</span>
+      <span class="kbd-hint">dbl-click edit · ⌘↵ command · open in Jot for AI</span>
       <button id="dismiss-all" title="Dismiss all (Esc)">×</button>
     </div>
   </div>
@@ -393,6 +563,31 @@
     <div id="progress-fill"></div>
   </div>
   <div id="notes-container"></div>
+  <div id="note-expanded" class="hidden" aria-hidden="true">
+    <div id="expanded-toolbar">
+      <span id="expanded-label">Edit note</span>
+      <button type="button" id="expanded-close" title="Save and back (Esc)" aria-label="Save and back">×</button>
+    </div>
+    <div id="expanded-scroll">
+      <div id="expanded-chips" class="why-now-chips"></div>
+      <textarea id="expanded-editor" class="note-expanded-editor" rows="8" spellcheck="true" aria-label="Note text"></textarea>
+      <div id="expanded-meta" class="note-card-meta"></div>
+    </div>
+    <div id="expanded-footer">
+      <div id="expanded-input-row">
+        <input
+          id="expanded-input"
+          type="text"
+          spellcheck="false"
+          autocomplete="off"
+          placeholder="don’t resurface for a week · snooze 30m · done"
+          aria-label="Note command"
+        />
+        <button type="button" id="expanded-open-jot" title="Open in Jot with AI">Open in Jot ↗</button>
+      </div>
+      <p id="expanded-status" aria-live="polite"></p>
+    </div>
+  </div>
   <div id="command-panel" class="hidden">
     <div id="command-label">Command</div>
     <input

@@ -65,6 +65,7 @@ const { parseOverlayCommand, formatMinutesLabel } = require('./overlayCommand');
 const { parseTimeReminderText, looksLikeTimeReminder } = require('./timeParser');
 const resurfaceScheduler = require('./resurfaceScheduler');
 const { runJotAiAgent } = require('./jot-ai/jotAiAgent');
+const { runJotAiSelectionAsk } = require('./jot-ai/jotAiSelectionAsk');
 
 // Integration: screenpipe engine sidecar + recall client + screenpipe search.
 function resolveIntegrationDir() {
@@ -701,6 +702,19 @@ function centerWindowOnContextDisplay(win) {
   win.setPosition(x, y);
 }
 
+function handleNewNoteShortcut() {
+  const searchVisible = searchWin && !searchWin.isDestroyed() && searchWin.isVisible();
+  if (searchVisible) {
+    searchWin.focus();
+    if (process.platform === 'darwin') {
+      void app.focus({ steal: true });
+    }
+    searchWin.webContents.send('search:focus', { compose: true });
+    return;
+  }
+  showCaptureWindow();
+}
+
 function showCaptureWindow() {
   if (!captureWin || captureWin.isDestroyed()) createCaptureWindow();
   hideSearchWindow();
@@ -981,7 +995,7 @@ function registerShortcut(accelerator, handler) {
 
 function registerShortcuts() {
   registerShortcut('CommandOrControl+Shift+J', () => showSearchWindow({ toggle: true }));
-  registerShortcut('CommandOrControl+N', () => showCaptureWindow());
+  registerShortcut('CommandOrControl+N', () => handleNewNoteShortcut());
   registerShortcut('CommandOrControl+Shift+N', () => void toggleComposeView());
   registerShortcut('CommandOrControl+Shift+R', () => void runManualRecall());
   registerShortcut('CommandOrControl+Shift+P', () => {
@@ -1692,6 +1706,11 @@ function registerIpc() {
   ipcMain.handle('notes:recent', (_event, folderId) => db.listRecent(20, folderId));
   ipcMain.handle('note:get', (_event, noteId) => db.getNote(noteId));
   ipcMain.handle('note:update', (_event, noteId, text) => db.updateNote(noteId, text));
+  ipcMain.handle('overlay:update-note', (_event, noteId, text) => {
+    const note = db.updateNote(noteId, text);
+    if (note) notifySearchNotesChanged();
+    return note;
+  });
   ipcMain.handle('note:set-organize-hint', (_event, noteId, hint) => {
     const before = db.getNote(noteId);
     const prev = String(before?.organize_hint ?? '').trim();
@@ -2056,7 +2075,7 @@ function registerIpc() {
   ipcMain.on('overlay-open-note', (_event, noteId) => {
     db.recordSurfaceEvent(noteId, lastSurfaceAppKey, 'opened');
     hideOverlay();
-    showSearchWindow({ openNoteId: noteId });
+    showSearchWindow({ openNoteId: noteId, focusJotAi: true });
   });
   ipcMain.on('overlay-snooze', (_event, noteId, appKey, minutes) => {
     db.recordSurfaceEvent(noteId, appKey, 'snoozed');
@@ -2100,15 +2119,6 @@ function registerIpc() {
     return { ...result, ...ui };
   });
 
-  ipcMain.handle('jot-ai:get-rules', async () => {
-    const { getMyJotRules } = require('./jot-ai/jotAiPreferences');
-    return getMyJotRules(app.getPath('userData'));
-  });
-  ipcMain.handle('jot-ai:save-rules', async (_event, payload) => {
-    const { writeUserRules } = require('./jot-ai/jotAiPreferences');
-    return writeUserRules(app.getPath('userData'), String((payload && payload.rules) || ''));
-  });
-
   ipcMain.handle('jot-ai:chat', async (_event, payload) => {
     try {
       const history = Array.isArray(payload && payload.history) ? payload.history : [];
@@ -2125,8 +2135,25 @@ function registerIpc() {
       if (result.confirmRequired) {
         // Signal to renderer that a confirmation is needed before destructive op
       }
+      db.pruneEmptyFolders();
       notifySearchNotesChanged();
       return result;
+    } catch (e) {
+      return { reply: `Error: ${e.message || String(e)}`, history: [] };
+    }
+  });
+
+  ipcMain.handle('jot-ai:selection-ask', async (_event, payload) => {
+    try {
+      const history = Array.isArray(payload && payload.history) ? payload.history : [];
+      const message = String((payload && payload.message) || '').trim();
+      const selection = String((payload && payload.selection) || '').trim();
+      return await runJotAiSelectionAsk({
+        history,
+        message,
+        selection,
+        userDataDir: app.getPath('userData'),
+      });
     } catch (e) {
       return { reply: `Error: ${e.message || String(e)}`, history: [] };
     }
@@ -2193,6 +2220,28 @@ function registerIpc() {
     if (parsed.op === 'dismissAll') {
       finishOverlaySession();
       return { ok: true, message: 'Dismissed.', dismissAll: true };
+    }
+
+    if (parsed.op === 'disableOne') {
+      if (!appKey) return { error: 'Missing app context.' };
+      const id =
+        Number.isFinite(focusNoteId) && noteIds.includes(focusNoteId) ? focusNoteId : noteIds[0];
+      if (!id) return { error: 'No reminder selected.' };
+      db.recordSurfaceEvent(id, appKey, 'dismissed');
+      db.dismissNote(id, appKey);
+      sendOverlayRemoveCard(id);
+      return { ok: true, message: "Won't resurface this note for this app." };
+    }
+
+    if (parsed.op === 'disableAll') {
+      if (!appKey) return { error: 'Missing app context.' };
+      if (noteIds.length === 0) return { error: 'No reminders visible.' };
+      for (const id of noteIds) {
+        db.recordSurfaceEvent(id, appKey, 'dismissed');
+        db.dismissNote(id, appKey);
+        sendOverlayRemoveCard(id);
+      }
+      return { ok: true, message: "Won't resurface these notes for this app." };
     }
 
     return { error: 'Unknown command.' };

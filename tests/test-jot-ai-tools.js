@@ -212,23 +212,14 @@ test('move_to_folder: moves notes to folder', () => {
   assert.equal(db.getNote(n1.id).folder_id, folder.id);
 });
 
-test('move_to_folder: requires confirm for >10 notes', () => {
-  const db = createFixtureDb();
-  const ids = [];
-  for (let i = 0; i < 11; i++) ids.push(db.insertNote(`Bulk note ${i}`).id);
-  const result = TOOL_MAP.move_to_folder(db, { note_ids: ids, folder_id: 1 });
-  assert.equal(result.confirmRequired, true);
-  assert.ok(result.summary.includes('11'));
-});
-
-test('move_to_folder: executes with confirmed=true for large batch', () => {
+test('move_to_folder: moves large batches without confirmation gate', () => {
   const db = createFixtureDb();
   const folder = db.insertFolder('BigBatch');
   const ids = [];
   for (let i = 0; i < 11; i++) ids.push(db.insertNote(`Batch note ${i}`).id);
-  const result = TOOL_MAP.move_to_folder(db, { note_ids: ids, folder_id: folder.id, confirmed: true });
+  const result = TOOL_MAP.move_to_folder(db, { note_ids: ids, folder_id: folder.id });
+  assert.equal(result.moved, 11);
   assert.ok(!result.confirmRequired);
-  assert.ok(result.moved > 0);
 });
 
 test('move_to_folder: returns error for empty note_ids', () => {
@@ -285,22 +276,14 @@ test('merge_notes: merges two notes into target', () => {
   assert.equal(db.getNote(src.id), null);
 });
 
-test('merge_notes: requires confirm for >2 source notes', () => {
+test('merge_notes: merges many sources without confirmation gate', () => {
   const db = createFixtureDb();
   const target = db.insertNote('Target');
   const srcIds = [db.insertNote('S1').id, db.insertNote('S2').id, db.insertNote('S3').id];
   const result = TOOL_MAP.merge_notes(db, { target_id: target.id, source_ids: srcIds });
-  assert.equal(result.confirmRequired, true);
-  assert.ok(result.summary.includes('3'));
-});
-
-test('merge_notes: executes with confirmed=true for >2 sources', () => {
-  const db = createFixtureDb();
-  const target = db.insertNote('Target');
-  const srcIds = [db.insertNote('S1').id, db.insertNote('S2').id, db.insertNote('S3').id];
-  const result = TOOL_MAP.merge_notes(db, { target_id: target.id, source_ids: srcIds, confirmed: true });
   assert.equal(result.merged, true);
   assert.equal(result.absorbed, 3);
+  assert.ok(!result.confirmRequired);
 });
 
 test('merge_notes: returns error for nonexistent target', () => {

@@ -10,7 +10,7 @@
 2. **Natural-language remind workflows** — e.g. *"remind me to check deploy when I open Cursor"* creates a note that resurfaces when that app is frontmost.
 3. **AI auto-filing** — New notes file into folders on save (optional Anthropic API key). Batch **File Notes** and custom organization prompts.
 4. **Jot AI** — Floating assistant (⌘⇧P) that knows the product and can search, move, tag, and reorganize your notes via tools.
-5. **System-wide shortcuts** — ⌘S search, ⌘N quick capture, ⌘⇧R manual recall—from any app, tray-less.
+5. **System-wide shortcuts** — ⌘⇧J search, ⌘N quick capture, ⌘⇧R manual recall—from any app, tray-less.
 
 ## Download (macOS)
 
@@ -36,12 +36,24 @@ Full install and troubleshooting: [INSTALL.md](./INSTALL.md)
 
 | Shortcut | Action |
 |----------|--------|
-| ⌘S | Toggle notes window |
+| ⌘⇧J | Toggle notes window |
 | ⌘N | Quick capture |
 | ⌘⇧N | Compose in main window |
 | ⌘⇧R | Manual recall |
 | ⌘⇧P | Open Jot AI |
-| Esc | Save and close note editor |
+| Esc / ⌘W | Save and close (capture or editor) |
+
+### Screenshot note
+
+1. Screenshot → copy to clipboard (macOS: ⌃⇧⌘4, drag, release)
+2. **⌘N** — open capture
+3. **⌘V** — paste image
+4. Type a caption
+5. **Esc** — save and close
+
+### Pair with Cursor
+
+Jot opens at login by default (hidden until you use a shortcut). Add **Cursor** to **System Settings → General → Login Items** too — both apps ready when your laptop wakes.
 
 ## Develop
 

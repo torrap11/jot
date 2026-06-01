@@ -20,5 +20,6 @@ test('system prompt embeds product guide', () => {
   const prompt = getJotAiSystemPrompt();
   assert.match(prompt, /Product guide/);
   assert.match(prompt, /do not invent features/i);
+  assert.match(prompt, /ACT FIRST/i);
   assert.ok(prompt.includes(JOT_AI_PRODUCT_GUIDE.slice(0, 80)));
 });

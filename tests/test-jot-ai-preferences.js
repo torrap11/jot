@@ -41,9 +41,10 @@ describe('jotAiPreferences', () => {
     assert.equal(readUserRules(tmpDir), '- new only');
   });
 
-  it('getMyJotRules reports empty state', () => {
+  it('getMyJotRules seeds default standing rules on first read', () => {
     const r = getMyJotRules(tmpDir);
-    assert.equal(r.empty, true);
-    assert.equal(r.rules, '');
+    assert.equal(r.empty, false);
+    assert.match(r.rules, /Buttonless Buddy/);
+    assert.ok(fs.existsSync(r.path));
   });
 });

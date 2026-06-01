@@ -1,6 +1,6 @@
 {
   "name": "jot",
-  "version": "2.2.3",
+  "version": "2.2.4",
   "description": "Jot — local-first notes with screen recording, proactive resurfacing, and AI agent",
   "main": "app-main.js",
   "scripts": {
@@ -38,6 +38,9 @@
       "resurfaceScheduler.js",
       "jot-ai/**/*",
       "jotAiInputHistory.js",
+      "jotAiPlan.js",
+      "jotLaunchSettings.js",
+      "selectionAsk.js",
       "integration/**/*",
       "renderer/**/*",
       "overlay/**/*",

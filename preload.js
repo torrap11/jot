@@ -94,8 +94,7 @@ contextBridge.exposeInMainWorld('mvp', {
 
   // Jot AI agent
   jotAiChat: (payload) => ipcRenderer.invoke('jot-ai:chat', payload),
-  jotAiGetRules: () => ipcRenderer.invoke('jot-ai:get-rules'),
-  jotAiSaveRules: (rules) => ipcRenderer.invoke('jot-ai:save-rules', { rules }),
+  jotAiSelectionAsk: (payload) => ipcRenderer.invoke('jot-ai:selection-ask', payload),
   openJotAi: () => ipcRenderer.send('jot-ai:open'),
   onFocusJotAi: (cb) => ipcRenderer.on('jot-ai:focus', () => cb()),
   onSwitchTab: (cb) => ipcRenderer.on('search:switch-tab', (_e, tab) => cb(tab)),

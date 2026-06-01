@@ -189,7 +189,8 @@ function openImageLightbox(src, alt) {
 
 async function closeEditor() {
   clearTimeout(saveTimer);
-  await flushActiveNote();
+  await flushActiveNote({ deleteIfEmpty: true });
+  await runQuery(queryInput.value.trim());
 
   const noteText = editorTextEl.value.trim();
   const hint = editorOrganizeHintEl ? editorOrganizeHintEl.value.trim() : '';
@@ -387,7 +388,9 @@ function labelForAppKey(bundleId) {
 function renderFolderDiagramHtml(diagram) {
   const root = String(diagram?.rootLabel || 'All notes');
   const unfiledCount = Number(diagram?.unfiledCount) || 0;
-  const folders = Array.isArray(diagram?.folders) ? diagram.folders : [];
+  const folders = (Array.isArray(diagram?.folders) ? diagram.folders : []).filter(
+    (folder) => (Number(folder.noteCount) || 0) > 0
+  );
   const folderTotal = folders.reduce((sum, folder) => sum + (Number(folder.noteCount) || 0), 0);
   const totalCount = folderTotal + unfiledCount;
   const items = [];
@@ -441,6 +444,16 @@ async function refreshFolderDiagram() {
   if (!folderDiagramTreeEl || !folderDiagramEl) return;
   try {
     const diagram = await window.mvp.getFolderDiagram();
+    const visibleIds = new Set(
+      (Array.isArray(diagram?.folders) ? diagram.folders : []).map((f) => String(f.id))
+    );
+    if (
+      state.folderFilter !== 'all' &&
+      state.folderFilter !== 'unfiled' &&
+      !visibleIds.has(String(state.folderFilter))
+    ) {
+      state.folderFilter = 'all';
+    }
     folderDiagramTreeEl.innerHTML = renderFolderDiagramHtml(diagram);
     folderDiagramEl.classList.remove('hidden');
   } catch (error) {
@@ -747,6 +760,7 @@ async function runQuery(text) {
   if (state.listFocusId != null && !state.notes.some((n) => n.id === state.listFocusId)) {
     state.listFocusId = state.notes[0]?.id ?? null;
   }
+  if (isEditorOpen()) mergeActiveEditorTextIntoNotes();
   renderResults();
   updateBulkActionsUi();
   await refreshFolderDiagram();
@@ -778,9 +792,53 @@ function highlightSnippet(snippetText, query) {
   return safe.replace(new RegExp(escapedQuery, 'gi'), (m) => `<mark class="search-hl">${m}</mark>`);
 }
 
+function isEditorOpen() {
+  return Boolean(editorEl && !editorEl.classList.contains('hidden') && state.activeId != null);
+}
+
+function readEditorTextSelection() {
+  if (document.activeElement !== editorTextEl) return null;
+  return { start: editorTextEl.selectionStart, end: editorTextEl.selectionEnd };
+}
+
+function restoreEditorTextSelection(selection) {
+  if (!selection) return;
+  editorTextEl.focus();
+  try {
+    editorTextEl.setSelectionRange(selection.start, selection.end);
+  } catch {
+    editorTextEl.focus();
+  }
+}
+
+/** Keep list state aligned with unsaved text in the open editor. */
+function mergeActiveEditorTextIntoNotes() {
+  if (!state.activeId) return;
+  const idx = state.notes.findIndex((n) => n.id === state.activeId);
+  if (idx < 0) return;
+  state.notes[idx] = { ...state.notes[idx], text: editorTextEl.value };
+}
+
+/** Update list snippet for the open note without rebuilding the whole results pane. */
+function syncActiveNoteInList() {
+  if (!state.activeId) return;
+  const note = state.notes.find((n) => n.id === state.activeId);
+  if (!note) return;
+  const row = resultsEl.querySelector(`.result-row[data-id="${state.activeId}"]`);
+  const textEl = row?.querySelector('.result-text');
+  if (!textEl) return;
+  const activeQuery = state.isDefaultList ? '' : queryInput.value.trim();
+  const body = note.id === state.activeId ? editorTextEl.value : note.text;
+  const snippet = extractSnippet(body, activeQuery);
+  textEl.innerHTML = highlightSnippet(snippet, activeQuery);
+}
+
 function renderResults() {
   if (state.notes.length === 0) {
+    const editorWasInResults = resultsEl.contains(editorEl);
+    if (editorWasInResults) editorEl.remove();
     resultsEl.innerHTML = '<div class="empty">No notes found.</div>';
+    dockInlineEditor();
     return;
   }
   const sameLocalDay = state.notes.every(
@@ -807,7 +865,7 @@ function renderResults() {
       const listFocus = note.id === state.listFocusId ? ' list-focus' : '';
       const selected = state.selectedIds.has(note.id) ? ' checked' : '';
       const tab = note.id === state.listFocusId ? '0' : '-1';
-      return `<div class="result-row${active}${listFocus}" data-id="${note.id}" draggable="true" title="Drag onto another note to group into a folder">
+      return `<div class="result-row${active}${listFocus}" data-id="${note.id}" draggable="true" title="Click to open note">
         <label class="result-select" title="Select note">
           <input type="checkbox" class="result-checkbox" data-id="${note.id}"${selected} />
         </label>
@@ -824,8 +882,13 @@ function renderResults() {
     })
     .join('');
 
+  const editorWasInResults = resultsEl.contains(editorEl);
+  const textSelection = isEditorOpen() ? readEditorTextSelection() : null;
+  if (editorWasInResults) editorEl.remove();
+
   resultsEl.innerHTML = countHtml + rows;
   dockInlineEditor();
+  restoreEditorTextSelection(textSelection);
 }
 
 async function startComposeNote() {
@@ -836,8 +899,18 @@ async function startComposeNote() {
 }
 
 async function openNote(noteId) {
+  const previousId = state.activeId;
+  if (previousId != null && previousId !== noteId) {
+    await flushActiveNote({ deleteIfEmpty: true });
+  }
   const note = await window.mvp.getNote(noteId);
   if (!note) return;
+
+  if (!state.notes.some((n) => n.id === note.id)) {
+    state.folderFilter = note.folder_id == null ? 'unfiled' : String(note.folder_id);
+    await runQuery('');
+  }
+
   const switchedNotes = state.activeId !== note.id;
   state.activeId = note.id;
   window.__jotActiveNoteId = note.id;
@@ -927,12 +1000,12 @@ async function runOrganizeForActiveNote() {
   const hint = editorOrganizeHintEl.value.trim();
   if (!hint) {
     if (editorOrganizeStatusEl) {
-      editorOrganizeStatusEl.textContent = 'Add organization instructions first.';
+      editorOrganizeStatusEl.textContent = 'Add AI instructions first.';
     }
     return;
   }
   if (editorOrganizeBtn) editorOrganizeBtn.disabled = true;
-  if (editorOrganizeStatusEl) editorOrganizeStatusEl.textContent = 'Organizing…';
+  if (editorOrganizeStatusEl) editorOrganizeStatusEl.textContent = 'Applying…';
   const result = await window.mvp.organizeNoteFromHint({
     noteId: state.activeId,
     noteText: editorTextEl.value,
@@ -942,7 +1015,7 @@ async function runOrganizeForActiveNote() {
   if (result.skipped) {
     if (editorOrganizeStatusEl) {
       editorOrganizeStatusEl.textContent =
-        result.reason === 'no_api_key' ? 'Add API key (Engine menu) to organize.' : '';
+        result.reason === 'no_api_key' ? 'Add API key (Engine menu) for AI instructions.' : '';
     }
     return;
   }
@@ -951,24 +1024,62 @@ async function runOrganizeForActiveNote() {
     return;
   }
   if (editorOrganizeStatusEl) {
-    editorOrganizeStatusEl.textContent = result.reply || 'Organized.';
+    editorOrganizeStatusEl.textContent = result.reply || 'Applied.';
   }
   await loadFolders();
   await runQuery(queryInput.value.trim());
   if (state.activeId) await openNote(state.activeId);
 }
 
-async function flushActiveNote() {
+async function flushActiveNote(options = {}) {
+  const { deleteIfEmpty = false } = options;
   if (!state.activeId) return { ok: false };
-  const value = editorTextEl.value.trim();
+  const noteId = state.activeId;
+  const rawText = editorTextEl.value;
+  const trimmed = rawText.trim();
   const hint = editorOrganizeHintEl ? editorOrganizeHintEl.value.trim() : '';
-  if (value) await window.mvp.updateNote(state.activeId, value);
-  if (editorOrganizeHintEl) await window.mvp.setOrganizeHint(state.activeId, hint);
-  await runQuery(queryInput.value.trim());
-  return { ok: true, noteId: state.activeId };
+  const idx = state.notes.findIndex((n) => n.id === noteId);
+  const prevHint = idx >= 0 ? String(state.notes[idx].organize_hint || '').trim() : '';
+
+  if (!trimmed) {
+    if (!deleteIfEmpty) return { ok: true, noteId };
+    const [images, files] = await Promise.all([
+      window.mvp.listNoteImages(noteId),
+      window.mvp.listNoteFiles(noteId),
+    ]);
+    const hasAttachments = (images?.length || 0) > 0 || (files?.length || 0) > 0;
+    if (hasAttachments) {
+      await window.mvp.updateNote(noteId, '(attachment)');
+    } else {
+      await window.mvp.deleteNote(noteId);
+      state.notes = state.notes.filter((n) => n.id !== noteId);
+      state.selectedIds.delete(noteId);
+      if (state.listFocusId === noteId) {
+        state.listFocusId = state.notes[0]?.id ?? null;
+      }
+      state.activeId = null;
+      window.__jotActiveNoteId = null;
+      syncActiveNoteInList();
+      return { ok: true, deleted: true, noteId };
+    }
+  } else {
+    await window.mvp.updateNote(noteId, rawText);
+  }
+
+  if (editorOrganizeHintEl && hint !== prevHint) {
+    await window.mvp.setOrganizeHint(noteId, hint);
+  }
+  if (idx >= 0) {
+    const saved = await window.mvp.getNote(noteId);
+    state.notes[idx] = saved
+      ? { ...saved, text: rawText }
+      : { ...state.notes[idx], text: rawText, organize_hint: hint || null };
+  }
+  syncActiveNoteInList();
+  return { ok: true, noteId };
 }
 
-window.__jotFlushActiveNote = () => flushActiveNote();
+window.__jotFlushActiveNote = () => flushActiveNote({ deleteIfEmpty: true });
 
 async function removeNoteById(id) {
   if (!Number.isFinite(id)) return;
@@ -1034,69 +1145,8 @@ function showCleanupStatus(text) {
   }, 16000);
 }
 
-fileNotesBtn?.addEventListener('click', async () => {
-  const prompt = fileNotesPromptEl ? fileNotesPromptEl.value.trim() : '';
-  fileNotesBtn.disabled = true;
-  showCleanupStatus('Filing notes…');
-  try {
-    const res = await window.mvp.fileAllNotes({ prompt });
-    if (res.error) {
-      showCleanupStatus(`Filing failed: ${res.error}`);
-      return;
-    }
-    showCleanupStatus(res.summary || 'Notes filed.');
-    if (state.activeId) {
-      const note = await window.mvp.getNote(state.activeId);
-      if (!note) closeEditor();
-    }
-    await loadFolders();
-    await runQuery(queryInput.value.trim());
-  } catch (e) {
-    showCleanupStatus(`Filing failed: ${e.message || String(e)}`);
-  } finally {
-    fileNotesBtn.disabled = false;
-  }
-});
-
-fileNotesPromptEl?.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') {
-    event.preventDefault();
-    fileNotesBtn?.click();
-  }
-});
-
 queryInput.addEventListener('input', () => {
   runQuery(queryInput.value.trim());
-});
-
-displayPromptBtn?.addEventListener('click', async () => {
-  const prompt = displayPromptEl ? displayPromptEl.value.trim() : '';
-  if (!prompt) return;
-  displayPromptBtn.disabled = true;
-  try {
-    const res = await window.mvp.naturalSort({ prompt, notes: state.notes.map((n) => ({ id: n.id, text: (n.text || '').slice(0, 200), folder_id: n.folder_id, created_at: n.created_at })) });
-    if (res.error || !Array.isArray(res.order)) {
-      showCleanupStatus(res.error || 'Could not reorder.');
-      return;
-    }
-    const idOrder = res.order;
-    const noteMap = new Map(state.notes.map((n) => [n.id, n]));
-    const sorted = idOrder.map((id) => noteMap.get(id)).filter(Boolean);
-    const remaining = state.notes.filter((n) => !idOrder.includes(n.id));
-    state.notes = [...sorted, ...remaining];
-    renderResults();
-  } catch (e) {
-    showCleanupStatus(`Display error: ${e.message || String(e)}`);
-  } finally {
-    displayPromptBtn.disabled = false;
-  }
-});
-
-displayPromptEl?.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') {
-    event.preventDefault();
-    displayPromptBtn?.click();
-  }
 });
 
 importDbBtn?.addEventListener('click', async () => {
@@ -1225,9 +1275,12 @@ resultsEl.addEventListener('click', (event) => {
     void removeNoteById(Number(del.dataset.id));
     return;
   }
-  const button = event.target.closest('.result');
-  if (!button) return;
-  openNote(Number(button.dataset.id));
+  if (event.target.closest('.result-select')) return;
+
+  const row = event.target.closest('.result-row');
+  if (!row) return;
+  const noteId = Number(row.dataset.id);
+  if (Number.isFinite(noteId)) void openNote(noteId);
 });
 
 // ── Drag notes onto folder tree ─────────────────────────────────────────
@@ -1340,7 +1393,12 @@ editorEl.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     event.preventDefault();
     event.stopPropagation();
-    closeEditor();
+    void closeEditor();
+    return;
+  }
+  if (event.key === 'Enter' && !event.shiftKey && event.target === editorOrganizeHintEl) {
+    event.preventDefault();
+    void closeEditor();
   }
 });
 
@@ -1641,11 +1699,7 @@ document.addEventListener('keydown', (event) => {
     }
   }
 
-  if (event.metaKey && !event.shiftKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'n') {
-    event.preventDefault();
-    void startComposeNote();
-    return;
-  }
+  // Cmd+N is handled globally in app-main (capture when closed, new note when search is open).
 
   if ((event.key === 'Delete' || event.key === 'Backspace') && state.listFocusId != null) {
     if (state.activeId != null && !editorEl.classList.contains('hidden')) return;
@@ -1668,7 +1722,22 @@ document.addEventListener('keydown', (event) => {
     return;
   }
 
+  if (event.metaKey && !event.shiftKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'w') {
+    event.preventDefault();
+    if (state.activeId != null && editorEl && !editorEl.classList.contains('hidden')) {
+      void closeEditor();
+      return;
+    }
+    window.mvp.hideSearch();
+    return;
+  }
+
   if (event.key === 'Escape') {
+    if (typeof window.isSelectionAskPanelOpen === 'function' && window.isSelectionAskPanelOpen()) {
+      event.preventDefault();
+      window.hideSelectionAskPanel?.();
+      return;
+    }
     if (newFolderModal && !newFolderModal.classList.contains('hidden')) {
       event.preventDefault();
       hideNewFolderModal();
@@ -1686,7 +1755,7 @@ document.addEventListener('keydown', (event) => {
     }
     if (state.activeId != null && editorEl && !editorEl.classList.contains('hidden')) {
       event.preventDefault();
-      closeEditor();
+      void closeEditor();
       return;
     }
     event.preventDefault();
@@ -1735,6 +1804,12 @@ anthropicKeyLink?.addEventListener('click', (event) => {
 
 window.mvp.onSearchFocus(async (payload) => {
   await runQuery(queryInput.value.trim());
+  if (payload && payload.focusJotAi) {
+    switchTab('notes');
+    if (payload.openNoteId) await openNote(Number(payload.openNoteId));
+    if (typeof window.focusJotAiInput === 'function') window.focusJotAiInput();
+    return;
+  }
   if (payload && payload.composeDraft != null) {
     const draftText = String(payload.composeDraft || '').trim();
     const note = draftText ? await window.mvp.createNote(draftText) : await window.mvp.createNote('');
@@ -1763,11 +1838,23 @@ window.mvp.onSearchFocus(async (payload) => {
 
 window.mvp.onNotesChanged(() => {
   void loadFolders();
-  void runQuery(queryInput.value.trim());
-  if (state.activeId != null) {
+  if (isEditorOpen()) {
+    void (async () => {
+      if (state.activeId != null) {
+        const saved = await window.mvp.getNote(state.activeId);
+        const idx = state.notes.findIndex((n) => n.id === state.activeId);
+        if (saved && idx >= 0) {
+          state.notes[idx] = { ...saved, text: editorTextEl.value };
+        }
+        syncActiveNoteInList();
+      }
+      await refreshFolderDiagram();
+    })();
     void renderLinks();
     void renderNoteImages();
+    return;
   }
+  void runQuery(queryInput.value.trim());
 });
 
 window.mvp.onOpenAiKeyModal(() => {
@@ -1792,7 +1879,7 @@ const notesPanel = document.getElementById('notes-panel');
 const recordingsPanel = document.getElementById('recordings-panel');
 function switchTab(name) {
   if (name === 'jot-ai') {
-    window.mvp.openJotAi();
+    if (typeof window.focusJotAiInput === 'function') window.focusJotAiInput();
     return;
   }
   const isNotes = name === 'notes';
@@ -1820,14 +1907,11 @@ document.querySelectorAll('.tab[data-tab]').forEach((btn) => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 
-document.getElementById('tab-jot-ai')?.addEventListener('click', () => {
-  window.mvp.openJotAi();
-});
-
-// ⌘⇧P shortcut from main process
+// ⌘⇧P shortcut from main process — focus sidebar chat
 window.mvp.onSwitchTab((tab) => switchTab(tab));
-
-// Jot AI is a separate window — see jot-ai.html / jot-ai-renderer.js
+window.mvp.onFocusJotAi?.(() => {
+  if (typeof window.focusJotAiInput === 'function') window.focusJotAiInput();
+});
 
 // Unified scope chips removed — Notes is notes-only; screen is on Recordings tab.
 
@@ -2212,34 +2296,112 @@ document.getElementById('rec-ask-query').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') void runRecordingsAsk();
 });
 
-// ── Split-pane drag handle ──────────────────────────────────────────────
-(function initSplitHandle() {
-  const handle = document.getElementById('split-handle');
-  const top = document.getElementById('split-top');
-  const panel = document.getElementById('notes-panel');
-  if (!handle || !top || !panel) return;
+// ── Split-pane drag handles (folders ↔ notes, notes ↔ Jot AI) ───────────
+(function initLayoutSplits() {
+  const LAYOUT_KEYS = {
+    notesTop: 'jot-layout-notes-top-h',
+    sidebar: 'jot-layout-sidebar-w',
+  };
 
-  let startY = 0;
-  let startH = 0;
-
-  function onMove(e) {
-    const dy = e.clientY - startY;
-    const newH = Math.max(40, Math.min(startH + dy, panel.clientHeight - 80));
-    top.style.flex = `0 0 ${newH}px`;
+  function readStoredPx(key) {
+    const raw = localStorage.getItem(key);
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
   }
 
-  function onUp() {
-    handle.classList.remove('dragging');
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
+  function bindAxisResize({
+    handle,
+    container,
+    target,
+    axis,
+    minTarget,
+    minOther,
+    storageKey,
+    initialRatio,
+  }) {
+    if (!handle || !container || !target) return;
+
+    const stored = storageKey ? readStoredPx(storageKey) : null;
+    if (stored != null) {
+      target.style.flex = `0 0 ${stored}px`;
+    } else if (initialRatio != null) {
+      const size =
+        axis === 'y'
+          ? Math.round(container.clientHeight * initialRatio)
+          : Math.round(container.clientWidth * initialRatio);
+      target.style.flex = `0 0 ${size}px`;
+    }
+
+    let startPointer = 0;
+    let startSize = 0;
+
+    function onMove(e) {
+      const delta = axis === 'y' ? e.clientY - startPointer : startPointer - e.clientX;
+      const maxSize =
+        axis === 'y'
+          ? container.clientHeight - minOther
+          : container.clientWidth - minOther;
+      const newSize = Math.max(minTarget, Math.min(startSize + delta, maxSize));
+      target.style.flex = `0 0 ${newSize}px`;
+      if (axis === 'x') target.style.width = `${newSize}px`;
+    }
+
+    function onUp() {
+      handle.classList.remove('dragging');
+      document.body.classList.remove('jot-split-dragging-y', 'jot-split-dragging-x');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (storageKey) {
+        const px = Math.round(
+          axis === 'y' ? target.getBoundingClientRect().height : target.getBoundingClientRect().width
+        );
+        localStorage.setItem(storageKey, String(px));
+      }
+    }
+
+    handle.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      startPointer = axis === 'y' ? e.clientY : e.clientX;
+      startSize =
+        axis === 'y' ? target.getBoundingClientRect().height : target.getBoundingClientRect().width;
+      handle.classList.add('dragging');
+      document.body.classList.add(axis === 'y' ? 'jot-split-dragging-y' : 'jot-split-dragging-x');
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
   }
 
-  handle.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    startY = e.clientY;
-    startH = top.getBoundingClientRect().height;
-    handle.classList.add('dragging');
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+  const notesPanel = document.getElementById('notes-panel');
+  const splitTop = document.getElementById('split-top');
+  const notesHandle = document.getElementById('split-handle');
+  const appBody = document.querySelector('.app-body');
+  const sidebar = document.getElementById('jot-ai-panel');
+  const sidebarHandle = document.getElementById('sidebar-split-handle');
+
+  bindAxisResize({
+    handle: notesHandle,
+    container: notesPanel,
+    target: splitTop,
+    axis: 'y',
+    minTarget: 80,
+    minOther: 120,
+    storageKey: LAYOUT_KEYS.notesTop,
+    initialRatio: 0.36,
+  });
+
+  bindAxisResize({
+    handle: sidebarHandle,
+    container: appBody,
+    target: sidebar,
+    axis: 'x',
+    minTarget: 220,
+    minOther: 280,
+    storageKey: LAYOUT_KEYS.sidebar,
+    initialRatio: 0.3,
   });
 })();
+
+window.jotOpenNote = (noteId) => {
+  void openNote(Number(noteId));
+};

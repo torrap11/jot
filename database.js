@@ -387,6 +387,9 @@ function getDb() {
   // After merges: drop any rows that still match the old bundled sample set (upgrades / merged DBs).
   purgeObsoleteSampleNotesIfPresent();
 
+  const noteDeletionUndo = require('./noteDeletionUndo');
+  noteDeletionUndo.ensureDeletionArchiveSchema(db);
+
   return db;
 }
 
@@ -805,6 +808,7 @@ function getFolderDiagram() {
       FROM folders f
       LEFT JOIN notes n ON n.folder_id = f.id
       GROUP BY f.id, f.name
+      HAVING COUNT(n.id) > 0
       ORDER BY lower(f.name) ASC
       `
     )
@@ -1456,4 +1460,5 @@ module.exports = {
   setResurfaceAt,
   clearResurfaceAt,
   getDueResurfaceNotes,
+  getDb,
 };

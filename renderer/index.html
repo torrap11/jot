@@ -49,26 +49,30 @@
         <div class="search-content">
         <div id="results"></div>
         <section id="editor" class="hidden">
-          <div class="editor-meta">
+          <div class="editor-meta" aria-hidden="true">
             <span id="editor-date"></span>
             <div class="editor-actions">
               <button id="copy-note-btn" type="button">Copy</button>
-              <button id="close-editor-btn" type="button" title="Close note (Esc)" aria-label="Close note panel">×</button>
+              <button id="close-editor-btn" type="button" title="Save and close (Esc)" aria-label="Save and close note">×</button>
             </div>
           </div>
-          <textarea id="editor-text" placeholder="Your note…"></textarea>
-          <div class="editor-ai-instructions organize-hint-row">
-            <label for="editor-organize-hint">AI instructions (optional)</label>
+          <div id="note-images" class="editor-note-images"></div>
+          <textarea id="editor-text" placeholder="What's on your mind?" spellcheck="true"></textarea>
+          <div class="editor-organize-hint-row organize-hint-row">
+            <label for="editor-organize-hint">How to file (optional)</label>
             <textarea
               id="editor-organize-hint"
               rows="2"
-              placeholder="e.g. remind me when I open Cursor · split into separate notes by idea · file into Research"
+              placeholder="e.g. Work · remind when I open Cursor · split by topic"
             ></textarea>
             <div class="organize-hint-actions">
-              <button type="button" id="editor-organize-btn" title="Run instructions (remind, split, file)">Apply</button>
+              <button type="button" id="editor-organize-btn" title="Run filing instructions now">Apply</button>
             </div>
             <p id="editor-organize-status" class="organize-status" aria-live="polite"></p>
           </div>
+          <p id="editor-keyboard-hint" class="editor-keyboard-hint" aria-hidden="true">
+            Esc save · ⌘V paste screenshot · Tab to file
+          </p>
           <div class="editor-filing">
             <details class="filing-details">
               <summary class="filing-summary">Attachments</summary>
@@ -86,7 +90,6 @@
                 <div class="file-row">
                   <button id="attach-file-btn" type="button">Attach file</button>
                 </div>
-                <div id="note-images"></div>
                 <div id="note-files"></div>
               </div>
             </details>
@@ -119,6 +122,18 @@
     </div>
     </div><!-- /app-main -->
 
+    <aside id="selection-ask-panel" class="selection-ask-panel hidden" aria-label="Quick ask about selection">
+      <div class="selection-ask-header">
+        <span class="selection-ask-title">Quick ask</span>
+        <button type="button" id="selection-ask-close" class="selection-ask-close" title="Close (Esc)" aria-label="Close quick ask">×</button>
+      </div>
+      <blockquote id="selection-ask-quote" class="selection-ask-quote"></blockquote>
+      <div id="selection-ask-chat" class="selection-ask-chat" aria-live="polite"></div>
+      <div class="selection-ask-input-row">
+        <textarea id="selection-ask-input" class="selection-ask-input" rows="2" placeholder="Ask about this line…  ↵ to send" aria-label="Question about highlighted text"></textarea>
+      </div>
+    </aside>
+
     <div class="split-handle split-handle--col" id="sidebar-split-handle" title="Drag to resize" aria-hidden="true"></div>
 
     <aside id="jot-ai-panel" class="jot-ai-sidebar" aria-label="Buttonless Buddy">
@@ -127,23 +142,23 @@
           <span class="jot-ai-sidebar-title">Buttonless Buddy</span>
           <span class="jot-ai-sidebar-sub">Jot · talk, don’t tap</span>
         </div>
-        <div class="jot-ai-sidebar-header-actions">
-          <button type="button" id="jot-ai-rules-btn" class="jot-ai-rules-btn text-action" title="Standing instructions">rules</button>
-          <span class="jot-ai-sidebar-hint" title="Focus chat (Command+Shift+P)"><kbd aria-hidden="true">⌘</kbd><kbd aria-hidden="true">⇧</kbd><kbd aria-hidden="true">P</kbd></span>
-        </div>
+        <span class="jot-ai-sidebar-hint" title="Focus chat (Command+Shift+P)"><kbd aria-hidden="true">⌘</kbd><kbd aria-hidden="true">⇧</kbd><kbd aria-hidden="true">P</kbd></span>
       </div>
       <div class="jot-ai-shell">
         <div class="jot-ai-chat" id="jot-ai-chat" aria-label="Buttonless Buddy conversation" aria-live="polite">
           <div class="jot-ai-empty" id="jot-ai-empty">
             <span class="jot-ai-empty-hero">Your buttonless buddy for notes.</span>
-            Just say what you want — organize, remind, teach me how to work. No menus required.
-            <span class="jot-ai-empty-example">“File unfiled notes into Work” · “Always show note ids before merging” · “Be terse”</span>
+            Just say what you want — organize, remind, or teach me something to remember next time.
+            <span class="jot-ai-empty-example">“File unfiled notes into Work” · “Remember: always show note ids before merging” · “Be terse”</span>
           </div>
         </div>
         <div class="jot-ai-confirm-row hidden" id="jot-ai-confirm-row">
           <span class="jot-ai-confirm-summary" id="jot-ai-confirm-summary"></span>
-          <button type="button" class="jot-ai-text-action jot-ai-confirm-btn" id="jot-ai-confirm-btn">yes</button>
-          <button type="button" class="jot-ai-text-action jot-ai-cancel-btn" id="jot-ai-cancel-btn">nah</button>
+          <div id="jot-ai-confirm-plan" class="jot-ai-plan hidden" aria-label="Notes in this action"></div>
+          <div class="jot-ai-confirm-actions">
+            <button type="button" class="jot-ai-text-action jot-ai-confirm-btn" id="jot-ai-confirm-btn">yes</button>
+            <button type="button" class="jot-ai-text-action jot-ai-cancel-btn" id="jot-ai-cancel-btn">nah</button>
+          </div>
         </div>
         <div class="jot-ai-input-row">
           <textarea class="jot-ai-input" id="jot-ai-input" placeholder="Tell your buttonless buddy…  ↵ to send" rows="2" aria-label="Message to Buttonless Buddy"></textarea>
@@ -182,17 +197,6 @@
       </div>
     </div>
   </div>
-  <div id="jot-ai-rules-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="jot-ai-rules-title">
-    <div class="modal-dialog jot-ai-rules-dialog">
-      <h2 id="jot-ai-rules-title" class="modal-title">Your Jot AI rules</h2>
-      <p class="modal-hint">Standing instructions Jot follows every chat. Edit here or teach Jot in conversation.</p>
-      <textarea id="jot-ai-rules-editor" class="jot-ai-rules-editor" rows="10" spellcheck="true" aria-label="Jot AI standing instructions"></textarea>
-      <div class="modal-actions">
-        <button type="button" id="jot-ai-rules-cancel" class="modal-btn secondary">Cancel</button>
-        <button type="button" id="jot-ai-rules-save" class="modal-btn primary">Save</button>
-      </div>
-    </div>
-  </div>
   <div id="new-folder-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="new-folder-modal-title">
     <div class="modal-dialog">
       <h2 id="new-folder-modal-title" class="modal-title">New folder</h2>
@@ -215,8 +219,11 @@
       </div>
     </div>
   </div>
+  <script src="../selectionAsk.js"></script>
   <script src="../jotAiInputHistory.js"></script>
+  <script src="../jotAiPlan.js"></script>
   <script src="renderer.js"></script>
   <script src="jot-ai-renderer.js"></script>
+  <script src="selection-ask-renderer.js"></script>
 </body>
 </html>
