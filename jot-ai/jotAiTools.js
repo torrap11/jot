@@ -350,6 +350,32 @@ const TOOL_SCHEMAS = [
       required: ['name'],
     },
   },
+  {
+    name: 'get_my_jot_rules',
+    description:
+      'Read the user\'s persistent standing instructions for Jot AI (how to behave, confirm, organize). Use when they ask what you remember or before changing style.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'update_my_jot_rules',
+    description:
+      'Save how the user wants Jot AI to behave in future chats. Use when they teach you preferences, conventions, or critique your approach.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        content: {
+          type: 'string',
+          description: 'Markdown bullet list or short rules to store',
+        },
+        mode: {
+          type: 'string',
+          enum: ['append', 'replace'],
+          description: 'append (default) adds to existing rules; replace overwrites all',
+        },
+      },
+      required: ['content'],
+    },
+  },
 ];
 
 const TOOL_MAP = {

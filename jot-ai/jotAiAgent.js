@@ -13,6 +13,7 @@ const path = require('path');
 const { readAnthropicCredentials } = require('../aiOrganize');
 const { TOOL_SCHEMAS, TOOL_MAP, findShareables } = require('./jotAiTools');
 const { getJotAiSystemPrompt } = require('./jotAiProductGuide');
+const { getMyJotRules, updateMyJotRules } = require('./jotAiPreferences');
 
 function looksLikeNoteLookup(message) {
   const m = String(message || '').toLowerCase();
@@ -116,7 +117,7 @@ async function runJotAiAgent(db, { history = [], message, userDataDir, logFile }
       response = await callAnthropicWithTools({
         apiKey,
         model,
-        system: getJotAiSystemPrompt(),
+        system: getJotAiSystemPrompt(userDataDir),
         tools: TOOL_SCHEMAS,
         messages,
       });
@@ -138,17 +139,23 @@ async function runJotAiAgent(db, { history = [], message, userDataDir, logFile }
     for (const block of content) {
       if (block.type !== 'tool_use') continue;
       const toolName = block.name;
-      const toolFn = TOOL_MAP[toolName];
       appendLog(logFile, `tool_call ${toolName} ${JSON.stringify(block.input)}`);
       let result;
-      if (!toolFn) {
-        result = { error: `Unknown tool: ${toolName}` };
-      } else {
-        try {
-          result = toolFn(db, block.input || {});
-        } catch (err) {
-          result = { error: err.message };
+      try {
+        if (toolName === 'get_my_jot_rules') {
+          result = getMyJotRules(userDataDir);
+        } else if (toolName === 'update_my_jot_rules') {
+          result = updateMyJotRules(userDataDir, block.input || {});
+        } else {
+          const toolFn = TOOL_MAP[toolName];
+          if (!toolFn) {
+            result = { error: `Unknown tool: ${toolName}` };
+          } else {
+            result = toolFn(db, block.input || {});
+          }
         }
+      } catch (err) {
+        result = { error: err.message };
       }
       appendLog(logFile, `tool_result ${toolName} ${JSON.stringify(result)}`);
       if (result && result.confirmRequired && !confirmRequired) {

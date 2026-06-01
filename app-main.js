@@ -5,7 +5,7 @@
 
 /**
  * Main process: tray-less MVP with windows (capture, search, overlay) + app watcher.
- * Flows: ⌘S search, ⌘N capture (from search), quick capture save, note CRUD/links, overlay actions,
+ * Flows: ⌘⇧J search, ⌘N capture (from search), quick capture save, note CRUD/links, overlay actions,
  * frontmost-app polling → surfaceEngine → overlay.
  */
 
@@ -23,12 +23,36 @@ const {
   session,
 } = require('electron');
 const { execFileSync } = require('child_process');
+const launchSettings = require('./jotLaunchSettings');
 const fs = require('fs/promises');
 const fsSync = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
 const db = require('./database');
+const noteDeletionUndo = require('./noteDeletionUndo');
+
+/** Cmd+Z / Cmd+Shift+Z stacks for archived note deletions (snapshot ids). */
+const deletionHistory = { undo: [], redo: [] };
+
+function purgeDeletionSnapshots(snapshotIds) {
+  if (!Array.isArray(snapshotIds) || snapshotIds.length === 0) return;
+  const paths = noteDeletionUndo.purgeSnapshots(db.getDb(), snapshotIds);
+  if (paths.length > 0) void cleanupImagePaths(paths);
+}
+
+function clearDeletionRedoStack() {
+  if (deletionHistory.redo.length === 0) return;
+  purgeDeletionSnapshots([...deletionHistory.redo]);
+  deletionHistory.redo = [];
+}
+
+function pushDeletionUndoSnapshot(snapshotId) {
+  const sid = Number(snapshotId);
+  if (!Number.isFinite(sid) || sid < 1) return;
+  clearDeletionRedoStack();
+  deletionHistory.undo.push(sid);
+}
 const watcher = require('./appWatcher');
 const surface = require('./surfaceEngine');
 const { createRecallOnAppSwitch } = require('./recallWatcher');
@@ -36,7 +60,7 @@ const { KNOWN_APPS, BUNDLE_ID_TO_NAME, resolveInputToBundleId } = require('./kno
 const { parseRemindWorkflowText } = require('./remindWorkflowParser');
 const aiOrganize = require('./aiOrganize');
 const noteCleanup = require('./noteCleanup');
-const { executeCaptureWorkflow } = require('./captureWorkflow');
+const { executeCaptureWorkflow, applyRemindWorkflowToNote } = require('./captureWorkflow');
 const { parseOverlayCommand, formatMinutesLabel } = require('./overlayCommand');
 const { parseTimeReminderText, looksLikeTimeReminder } = require('./timeParser');
 const resurfaceScheduler = require('./resurfaceScheduler');
@@ -75,7 +99,6 @@ const PRELOAD_MAIN = path.join(__dirname, 'preload.js');
 let captureWin = null;
 let searchWin = null;
 let overlayWin = null;
-let jotAiWin = null;
 let lastSurfaceAt = 0;
 let lastSurfaceAppKey = '';
 let isImportingDb = false;
@@ -94,6 +117,16 @@ const AUTO_FILE_HINT =
 const BLUR_HIDE_IGNORE_MS = 450;
 
 let appIsQuitting = false;
+
+/** One process per install — avoids duplicate global shortcuts (e.g. ⌘⇧P) with an old .app still running. */
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    focusJotAiInMainWindow();
+  });
+}
 
 const APP_CONFIG = {
   maxSurfacedNotes: 3,
@@ -361,53 +394,12 @@ function wireUtilityWindowClose(win, hideFn) {
 
 function isJotMainWindow(win) {
   if (!win || win.isDestroyed()) return false;
-  return win === searchWin || win === captureWin || win === jotAiWin;
+  return win === searchWin || win === captureWin;
 }
 
-function createJotAiWindow() {
-  jotAiWin = new BrowserWindow({
-    width: 420,
-    height: 520,
-    show: false,
-    title: 'Jot AI',
-    minimizable: true,
-    maximizable: false,
-    resizable: true,
-    ...macHiddenInsetChrome(),
-    webPreferences: rendererWebPreferences(),
-  });
-  jotAiWin.on('closed', () => {
-    jotAiWin = null;
-  });
-  wireUtilityWindowClose(jotAiWin, hideJotAiWindow);
-  jotAiWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  jotAiWin.loadFile(path.join(__dirname, 'renderer', 'jot-ai.html'));
-}
-
-function showJotAiWindow() {
-  const isNew = !jotAiWin || jotAiWin.isDestroyed();
-  if (isNew) createJotAiWindow();
-
-  if (isNew && searchWin && !searchWin.isDestroyed() && searchWin.isVisible()) {
-    const [sx, sy] = searchWin.getPosition();
-    const [sw] = searchWin.getSize();
-    jotAiWin.setPosition(sx + sw + 12, sy);
-  }
-
-  jotAiWin.show();
-  jotAiWin.focus();
-}
-
-function hideJotAiWindow() {
-  if (jotAiWin && !jotAiWin.isDestroyed()) jotAiWin.hide();
-}
-
-function toggleJotAiWindow() {
-  if (jotAiWin && !jotAiWin.isDestroyed() && jotAiWin.isVisible()) {
-    hideJotAiWindow();
-  } else {
-    showJotAiWindow();
-  }
+/** Show main window and focus the embedded Jot AI sidebar chat. */
+function focusJotAiInMainWindow() {
+  showSearchWindow({ focusJotAi: true });
 }
 
 async function flushSearchNoteBeforeHide() {
@@ -467,6 +459,41 @@ async function autoFileCaptureNoteIfNeeded(payload) {
   return autoOrganizeInBackground(noteId, noteText, organizeHint || AUTO_FILE_HINT);
 }
 
+/** After capture UI closes: folder, reminder policy, optional AI filing. */
+async function finishCaptureNoteInBackground(payload) {
+  const noteId = Number(payload?.noteId);
+  if (!Number.isFinite(noteId)) return { error: 'Invalid note id' };
+
+  const folderValue = payload?.folderValue ?? 'unfiled';
+  const organizeHint = String(payload?.organizeHint || '').trim();
+  let noteText = String(payload?.noteText || '');
+
+  if (folderValue && folderValue !== 'unfiled') {
+    db.setNoteFolder(noteId, folderValue);
+  }
+
+  const reminder = payload?.reminder;
+  if (reminder?.type === 'workflow') {
+    const wf = await applyRemindWorkflowToNote(
+      db,
+      noteId,
+      String(reminder.rawText || ''),
+      app.getPath('userData')
+    );
+    if (wf.error) return { error: wf.error };
+    if (wf.reminderText) noteText = wf.reminderText;
+  } else if (reminder?.type === 'time' && reminder.resurfaceAt) {
+    db.setResurfaceAt(noteId, reminder.resurfaceAt);
+  }
+
+  if (payload?.autoFile !== false) {
+    await autoFileCaptureNoteIfNeeded({ noteId, noteText, folderValue, organizeHint });
+  }
+
+  notifySearchNotesChanged();
+  return { ok: true, noteId, noteText };
+}
+
 async function flushCaptureBeforeHide() {
   if (!captureWin || captureWin.isDestroyed()) return;
   try {
@@ -475,7 +502,7 @@ async function flushCaptureBeforeHide() {
       true
     );
     if (result?.ok && result.noteId) {
-      await autoFileCaptureNoteIfNeeded(result);
+      void finishCaptureNoteInBackground({ ...result, autoFile: true });
     }
   } catch {
     /* renderer not ready */
@@ -516,10 +543,21 @@ function attachClickAwayHide(win) {
   });
 }
 
+function wireMinimizeToHide(win, beforeHide) {
+  win.on('minimize', () => {
+    void (async () => {
+      if (beforeHide) await beforeHide();
+      if (!win || win.isDestroyed()) return;
+      win.hide();
+      if (win.isMinimized()) win.restore();
+    })();
+  });
+}
+
 function createCaptureWindow() {
   captureWin = new BrowserWindow({
-    width: 560,
-    height: 320,
+    width: 520,
+    height: 360,
     show: false,
     transparent: false,
     resizable: true,
@@ -535,16 +573,21 @@ function createCaptureWindow() {
     captureWin = null;
   });
   wireUtilityWindowClose(captureWin, hideCaptureWindow);
+  wireMinimizeToHide(captureWin, flushCaptureBeforeHide);
+  attachClickAwayHide(captureWin);
   captureWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   captureWin.loadFile(path.join(__dirname, 'renderer', 'capture.html'));
 }
 
 function createSearchWindow() {
   searchWin = new BrowserWindow({
-    width: 800,
+    width: 1040,
     height: 700,
+    minWidth: 720,
+    minHeight: 480,
     show: false,
     title: 'Jot',
+    resizable: true,
     minimizable: true,
     maximizable: true,
     ...macHiddenInsetChrome(),
@@ -554,6 +597,8 @@ function createSearchWindow() {
     searchWin = null;
   });
   wireUtilityWindowClose(searchWin, hideSearchWindow);
+  wireMinimizeToHide(searchWin, flushSearchNoteBeforeHide);
+  attachClickAwayHide(searchWin);
   searchWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   searchWin.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
@@ -591,7 +636,7 @@ function getOverlayWindow() {
 /**
  * Point used to pick which display to center Jot windows on.
  * Uses the frontmost *other* app's main window when possible; if the frontmost app is
- * Jot itself (stale frame on another Space), uses the mouse so ⌘S opens on the Space
+ * Jot itself (stale frame on another Space), uses the mouse so ⌘⇧J opens on the Space
  * you're actually using.
  */
 function getPlacementAnchorPoint() {
@@ -935,12 +980,12 @@ function registerShortcut(accelerator, handler) {
 }
 
 function registerShortcuts() {
-  registerShortcut('CommandOrControl+S', () => showSearchWindow({ toggle: true }));
+  registerShortcut('CommandOrControl+Shift+J', () => showSearchWindow({ toggle: true }));
   registerShortcut('CommandOrControl+N', () => showCaptureWindow());
   registerShortcut('CommandOrControl+Shift+N', () => void toggleComposeView());
   registerShortcut('CommandOrControl+Shift+R', () => void runManualRecall());
   registerShortcut('CommandOrControl+Shift+P', () => {
-    toggleJotAiWindow();
+    focusJotAiInMainWindow();
   });
 }
 
@@ -1337,6 +1382,20 @@ function buildAppMenu() {
             }
           },
         },
+        ...(process.platform === 'darwin'
+          ? [
+              { type: 'separator' },
+              {
+                label: 'Open at Login',
+                type: 'checkbox',
+                checked: launchSettings.readLaunchSettings().openAtLogin,
+                click: (menuItem) => {
+                  launchSettings.setOpenAtLogin(menuItem.checked);
+                  buildAppMenu();
+                },
+              },
+            ]
+          : []),
         { type: 'separator' },
         { role: process.platform === 'darwin' ? 'close' : 'quit' },
       ],
@@ -1358,7 +1417,19 @@ function buildAppMenu() {
     },
     {
       label: 'Window',
-      submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'togglefullscreen' }],
+      submenu: [
+        {
+          label: 'Hide Window',
+          accelerator: 'CommandOrControl+W',
+          click: () => {
+            void flushSearchNoteBeforeHide();
+            hideSearchWindow();
+          },
+        },
+        { type: 'separator' },
+        { role: 'zoom' },
+        { role: 'togglefullscreen' },
+      ],
     },
     {
       label: 'Engine',
@@ -1604,6 +1675,13 @@ function registerIpc() {
       return { error: e.message || String(e) };
     }
   });
+  ipcMain.handle('capture:finish-background', async (_event, payload) => {
+    try {
+      return await finishCaptureNoteInBackground(payload || {});
+    } catch (e) {
+      return { error: e.message || String(e) };
+    }
+  });
   ipcMain.handle('notes:create', (_event, text) => {
     const trimmed = String(text || '').trim();
     const note = trimmed ? db.createNote(trimmed) : db.createDraftNote();
@@ -1615,8 +1693,11 @@ function registerIpc() {
   ipcMain.handle('note:get', (_event, noteId) => db.getNote(noteId));
   ipcMain.handle('note:update', (_event, noteId, text) => db.updateNote(noteId, text));
   ipcMain.handle('note:set-organize-hint', (_event, noteId, hint) => {
+    const before = db.getNote(noteId);
+    const prev = String(before?.organize_hint ?? '').trim();
     const note = db.setNoteOrganizeHint(noteId, hint);
-    if (note) notifySearchNotesChanged();
+    const next = String(hint ?? '').trim();
+    if (note && next !== prev) notifySearchNotesChanged();
     return note;
   });
   ipcMain.handle('ai:organize-note-from-hint', async (_event, payload) => {
@@ -1641,24 +1722,50 @@ function registerIpc() {
     return note;
   });
   ipcMain.handle('note:delete', (_event, noteId) => {
-    const imagePaths = db.getImagePathsForNote(noteId);
-    const filePaths = db.getFilePathsForNote(noteId);
-    const ok = db.deleteNote(noteId);
-    if (ok) {
-      void cleanupImagePaths([...imagePaths, ...filePaths]);
-      notifySearchNotesChanged();
-    }
-    return ok;
+    const snapshotId = noteDeletionUndo.archiveAndDeleteNotes(
+      db.getDb(),
+      (ids) => db.deleteNotes(ids),
+      [noteId],
+    );
+    if (!snapshotId) return { ok: false };
+    pushDeletionUndoSnapshot(snapshotId);
+    notifySearchNotesChanged();
+    return { ok: true, snapshotId };
   });
   ipcMain.handle('note:delete-many', (_event, noteIds) => {
-    const imagePaths = db.getImagePathsForNotes(noteIds);
-    const filePaths = db.getFilePathsForNotes(noteIds);
-    const deletedCount = db.deleteNotes(noteIds);
-    if (deletedCount > 0) {
-      void cleanupImagePaths([...imagePaths, ...filePaths]);
-      notifySearchNotesChanged();
-    }
-    return deletedCount;
+    const snapshotId = noteDeletionUndo.archiveAndDeleteNotes(
+      db.getDb(),
+      (ids) => db.deleteNotes(ids),
+      noteIds,
+    );
+    if (!snapshotId) return { ok: false, deletedCount: 0 };
+    pushDeletionUndoSnapshot(snapshotId);
+    notifySearchNotesChanged();
+    const snap = noteDeletionUndo.loadSnapshot(db.getDb(), snapshotId);
+    const deletedCount = snap?.payload?.notes?.length ?? 0;
+    return { ok: true, deletedCount, snapshotId };
+  });
+  ipcMain.handle('note:undo-delete', () => {
+    const snapshotId = deletionHistory.undo.pop();
+    if (!snapshotId) return { ok: false };
+    const { noteIds } = noteDeletionUndo.restoreSnapshot(db.getDb(), snapshotId);
+    if (noteIds.length === 0) return { ok: false };
+    deletionHistory.redo.push(snapshotId);
+    notifySearchNotesChanged();
+    return { ok: true, noteIds };
+  });
+  ipcMain.handle('note:redo-delete', () => {
+    const snapshotId = deletionHistory.redo.pop();
+    if (!snapshotId) return { ok: false };
+    const { noteIds, deleted } = noteDeletionUndo.deleteNotesFromSnapshot(
+      db.getDb(),
+      (ids) => db.deleteNotes(ids),
+      snapshotId,
+    );
+    if (!deleted) return { ok: false };
+    deletionHistory.undo.push(snapshotId);
+    notifySearchNotesChanged();
+    return { ok: true, noteIds };
   });
 
   ipcMain.handle('links:get', (_event, noteId) => db.getLinksForNote(noteId));
@@ -1926,7 +2033,7 @@ function registerIpc() {
   });
   ipcMain.on('window:show-search', (_event, payload) => showSearchWindow(payload || {}));
   ipcMain.on('window:show-capture', showCaptureWindow);
-  ipcMain.on('jot-ai:open', () => showJotAiWindow());
+  ipcMain.on('jot-ai:open', () => focusJotAiInMainWindow());
 
   // Recall card actions — map to POST /recall/action then close overlay
   ipcMain.on('recall:dismiss', (_event, eventId) => {
@@ -1991,6 +2098,15 @@ function registerIpc() {
     buildAppMenu();
     const ui = await resolveEngineUiState();
     return { ...result, ...ui };
+  });
+
+  ipcMain.handle('jot-ai:get-rules', async () => {
+    const { getMyJotRules } = require('./jot-ai/jotAiPreferences');
+    return getMyJotRules(app.getPath('userData'));
+  });
+  ipcMain.handle('jot-ai:save-rules', async (_event, payload) => {
+    const { writeUserRules } = require('./jot-ai/jotAiPreferences');
+    return writeUserRules(app.getPath('userData'), String((payload && payload.rules) || ''));
   });
 
   ipcMain.handle('jot-ai:chat', async (_event, payload) => {
@@ -2119,7 +2235,12 @@ app.whenReady().then(async () => {
   console.log('[app] DB path:', db.getDbPath());
 
   createSearchWindow();
-  showSearchWindow();
+  launchSettings.configureDefaultLaunchAtLogin();
+  const loginItemSettings = app.getLoginItemSettings();
+  const openedAtLogin = loginItemSettings.wasOpenedAtLogin === true;
+  if (!openedAtLogin) {
+    showSearchWindow();
+  }
   buildAppMenu();
   registerShortcuts();
   registerIpc();

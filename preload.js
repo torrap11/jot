@@ -13,6 +13,7 @@ if (process.platform === 'darwin') {
 contextBridge.exposeInMainWorld('mvp', {
   saveCapture: (text, appKey) => ipcRenderer.invoke('capture:save', text, appKey),
   autoFileCaptureNote: (payload) => ipcRenderer.invoke('capture:auto-file', payload),
+  finishCaptureBackground: (payload) => ipcRenderer.invoke('capture:finish-background', payload),
   createNote: (text) => ipcRenderer.invoke('notes:create', text),
   queryNotes: (query, folderId) => ipcRenderer.invoke('search:query', query, folderId),
   recentNotes: (folderId) => ipcRenderer.invoke('notes:recent', folderId),
@@ -23,6 +24,8 @@ contextBridge.exposeInMainWorld('mvp', {
   setNoteFolder: (noteId, folderId) => ipcRenderer.invoke('note:set-folder', noteId, folderId),
   deleteNote: (noteId) => ipcRenderer.invoke('note:delete', noteId),
   deleteNotes: (noteIds) => ipcRenderer.invoke('note:delete-many', noteIds),
+  undoNoteDeletion: () => ipcRenderer.invoke('note:undo-delete'),
+  redoNoteDeletion: () => ipcRenderer.invoke('note:redo-delete'),
   getLinks: (noteId) => ipcRenderer.invoke('links:get', noteId),
   addLink: (noteId, appKey) => ipcRenderer.invoke('links:add', noteId, appKey),
   removeLink: (noteId, appKey) => ipcRenderer.invoke('links:remove', noteId, appKey),
@@ -91,6 +94,9 @@ contextBridge.exposeInMainWorld('mvp', {
 
   // Jot AI agent
   jotAiChat: (payload) => ipcRenderer.invoke('jot-ai:chat', payload),
+  jotAiGetRules: () => ipcRenderer.invoke('jot-ai:get-rules'),
+  jotAiSaveRules: (rules) => ipcRenderer.invoke('jot-ai:save-rules', { rules }),
   openJotAi: () => ipcRenderer.send('jot-ai:open'),
+  onFocusJotAi: (cb) => ipcRenderer.on('jot-ai:focus', () => cb()),
   onSwitchTab: (cb) => ipcRenderer.on('search:switch-tab', (_e, tab) => cb(tab)),
 });

@@ -2,35 +2,43 @@
   --jot-traffic-light-inset-top: 28px;
   --jot-traffic-light-inset-left: 72px;
   color-scheme: dark;
-  /* SF Pro / system UI — same stack as Apple Notes */
   --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display',
     'Helvetica Neue', Helvetica, Arial, sans-serif;
-  /* Dark mode aligned with macOS system grays + Notes-style accents */
-  --bg: #1c1c1e;
-  --panel: #2c2c2e;
-  --elevated: #2c2c2e;
-  --surface-inset: #1c1c1e;
-  --border: rgba(255, 255, 255, 0.1);
-  --border-strong: rgba(255, 255, 255, 0.16);
-  --separator: rgba(255, 255, 255, 0.09);
-  --text: #f2f2f7;
-  --muted: #98989d;
-  --muted-2: #636366;
-  --accent: #0a84ff;
-  --accent-soft: rgba(10, 132, 255, 0.35);
-  --on-accent: #ffffff;
-  --button-bg: #3a3a3c;
-  --button-bg-hover: #48484a;
-  /* Notes sidebar selection — warm yellow */
-  --selection: rgba(255, 214, 10, 0.24);
-  --selection-border: rgba(255, 214, 10, 0.45);
-  --row-hover: rgba(255, 255, 255, 0.06);
-  --row-active: rgba(255, 255, 255, 0.1);
-  --danger: #ff453a;
-  --danger-muted: #ff6961;
-  --danger-bg: rgba(255, 69, 58, 0.12);
-  --danger-bg-hover: rgba(255, 69, 58, 0.18);
-  --danger-border: rgba(255, 69, 58, 0.35);
+  --font-display: 'SF Pro Display', var(--font-ui);
+
+  /* Artsy dark canvas + aurora accents */
+  --bg: #12101a;
+  --bg-mesh: radial-gradient(120% 80% at 0% 0%, rgba(255, 105, 180, 0.14), transparent 50%),
+    radial-gradient(90% 70% at 100% 10%, rgba(64, 210, 255, 0.12), transparent 45%),
+    radial-gradient(80% 60% at 50% 100%, rgba(180, 120, 255, 0.1), transparent 50%),
+    #12101a;
+  --panel: rgba(36, 32, 48, 0.72);
+  --elevated: rgba(48, 42, 64, 0.85);
+  --surface-inset: rgba(18, 16, 26, 0.9);
+  --border: rgba(255, 200, 255, 0.12);
+  --border-strong: rgba(180, 220, 255, 0.22);
+  --separator: rgba(255, 255, 255, 0.08);
+  --text: #f8f4ff;
+  --muted: #b8a8c8;
+  --muted-2: #7a6a8c;
+  --accent: #ff6bcb;
+  --accent-2: #5ce1ff;
+  --accent-3: #c4a1ff;
+  --accent-soft: rgba(255, 107, 203, 0.28);
+  --accent-gradient: linear-gradient(135deg, #ff6bcb 0%, #c4a1ff 48%, #5ce1ff 100%);
+  --on-accent: #1a1020;
+  --button-bg: rgba(255, 255, 255, 0.06);
+  --button-bg-hover: rgba(255, 255, 255, 0.11);
+  --selection: rgba(255, 107, 203, 0.22);
+  --selection-border: rgba(92, 225, 255, 0.45);
+  --row-hover: rgba(196, 161, 255, 0.08);
+  --row-active: rgba(255, 107, 203, 0.12);
+  --danger: #ff6b7a;
+  --danger-muted: #ff9aa5;
+  --danger-bg: rgba(255, 107, 122, 0.14);
+  --danger-bg-hover: rgba(255, 107, 122, 0.22);
+  --danger-border: rgba(255, 107, 122, 0.35);
+  --buddy-glow: 0 0 40px rgba(255, 107, 203, 0.15), 0 0 80px rgba(92, 225, 255, 0.08);
 }
 
 * {
@@ -139,22 +147,26 @@ body {
 .capture-shell textarea,
 .capture-shell input,
 .capture-shell select,
-.capture-shell button,
-.capture-pending-images,
-.capture-attach-row {
+.capture-pending-images {
   -webkit-app-region: no-drag;
 }
 
-.capture-attach-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
+.capture-filing-section {
+  flex-shrink: 0;
 }
 
-.capture-attach-hint {
-  font-size: 10px;
+.capture-filing-section label {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 12px;
+}
+
+.capture-keyboard-hint {
+  flex-shrink: 0;
+  margin: 0;
+  font-size: 11px;
   color: var(--muted-2);
-  margin-left: 4px;
+  line-height: 1.35;
 }
 
 .capture-pending-images {
@@ -207,7 +219,7 @@ body {
 #capture-input {
   width: 100%;
   flex: 1;
-  min-height: 56px;
+  min-height: 120px;
   border: 0;
   outline: 0;
   resize: none;
@@ -234,11 +246,25 @@ body {
 }
 
 .search-body {
-  background: var(--bg);
+  background: var(--bg-mesh);
+  background-color: var(--bg);
   height: 100%;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.search-body.jot-split-dragging-y,
+.search-body.jot-split-dragging-x {
+  user-select: none;
+}
+
+.search-body.jot-split-dragging-y {
+  cursor: row-resize;
+}
+
+.search-body.jot-split-dragging-x {
+  cursor: col-resize;
 }
 
 .search-shell {
@@ -250,6 +276,38 @@ body {
   overflow: hidden;
   padding: 14px 16px;
   gap: 10px;
+}
+
+.app-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  gap: 0;
+  margin: 0 -16px -14px;
+  border-top: 1px solid var(--separator);
+}
+
+.app-main {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 10px 16px 14px;
+  gap: 10px;
+}
+
+.app-main .tab-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-main .tab-panel.hidden {
+  display: none !important;
 }
 
 /* Note list + editor grow with content; #notes-panel scrolls (one wheel target). */
@@ -411,18 +469,58 @@ body {
 }
 
 .split-handle {
-  flex: 0 0 5px;
+  flex: 0 0 6px;
   background: var(--border);
-  cursor: row-resize;
   position: relative;
-  opacity: 0.5;
-  transition: opacity 0.15s;
+  opacity: 0.45;
+  transition: opacity 0.15s, background 0.15s;
+  touch-action: none;
+  user-select: none;
+  z-index: 2;
+}
+
+.split-handle::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  border-radius: 2px;
+  background: var(--muted-2);
+  opacity: 0.6;
+}
+
+.split-handle:not(.split-handle--col) {
+  cursor: row-resize;
+}
+
+.split-handle:not(.split-handle--col)::after {
+  width: 36px;
+  height: 2px;
+}
+
+.split-handle--col {
+  flex: 0 0 6px;
+  width: 6px;
+  min-width: 6px;
+  cursor: col-resize;
+  align-self: stretch;
+}
+
+.split-handle--col::after {
+  width: 2px;
+  height: 36px;
 }
 
 .split-handle:hover,
 .split-handle.dragging {
   opacity: 1;
-  background: var(--accent, #5599ff);
+  background: var(--accent-soft);
+}
+
+.split-handle:hover::after,
+.split-handle.dragging::after {
+  background: var(--accent);
+  opacity: 1;
 }
 
 .split-bottom {
@@ -895,8 +993,12 @@ button.folder-node:hover {
   min-height: 220px;
 }
 
-.editor-filing {
+.editor-ai-instructions {
   margin-top: 8px;
+}
+
+.editor-filing {
+  margin-top: 4px;
 }
 
 .filing-details {
@@ -1128,6 +1230,13 @@ button.folder-node:hover {
   justify-content: center;
   padding: 16px;
   background: rgba(0, 0, 0, 0.55);
+  -webkit-app-region: no-drag;
+}
+
+.modal-backdrop button,
+.modal-backdrop textarea,
+.modal-backdrop input {
+  -webkit-app-region: no-drag;
 }
 
 .modal-backdrop.hidden {
@@ -1559,7 +1668,17 @@ button.folder-node:hover {
 }
 
 .capture-organize-hint-row textarea {
-  min-height: 40px;
+  min-height: 36px;
+  max-height: 72px;
+  font-size: 12px;
+  background: transparent;
+  border-color: transparent;
+  padding: 4px 2px;
+}
+
+.capture-organize-hint-row textarea:focus {
+  border-color: var(--border);
+  background: var(--surface-2);
 }
 
 .content-type-chips {
@@ -1845,14 +1964,116 @@ mark.search-hl {
   padding: 0 1px;
 }
 
-/* ── Jot AI agent panel ──────────────────────────────────────────────────────── */
+/* ── Jot AI sidebar (always visible) ─────────────────────────────────────────── */
+
+.jot-ai-sidebar {
+  flex: 0 0 300px;
+  width: 300px;
+  min-width: 220px;
+  max-width: min(560px, 72vw);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--separator);
+  background: var(--panel);
+  -webkit-app-region: no-drag;
+}
+
+.jot-ai-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 8px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--separator);
+}
+
+.jot-ai-sidebar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.jot-ai-sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jot-ai-rules-btn {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-2);
+  background: transparent;
+  border: 1px solid var(--separator);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.jot-ai-rules-btn:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.jot-ai-rules-btn--active {
+  color: #64d2ff;
+  border-color: rgba(100, 210, 255, 0.35);
+  background: rgba(100, 210, 255, 0.08);
+}
+
+.jot-ai-sidebar-hint {
+  display: inline-flex;
+  gap: 1px;
+  font-size: 11px;
+  color: var(--muted-2);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+  font-feature-settings: normal;
+}
+
+.jot-ai-sidebar-hint kbd {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+}
+
+.jot-ai-rules-editor {
+  width: 100%;
+  min-height: 200px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--separator);
+  border-radius: 8px;
+  color: var(--text);
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.jot-ai-sidebar .jot-ai-shell {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
 
 #jot-ai-panel {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  -webkit-app-region: no-drag;
 }
 
 .jot-ai-chat {
@@ -2015,5 +2236,220 @@ mark.search-hl {
 .jot-ai-send-btn:disabled {
   background: rgba(10, 132, 255, 0.4);
   cursor: not-allowed;
+}
+
+/* ── Buttonless Buddy: artsy chrome + minimal buttons ───────────────────── */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.text-action {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 2px 6px !important;
+  min-height: unset !important;
+  font-size: 12px !important;
+  font-weight: 500;
+  color: var(--accent-2) !important;
+  cursor: pointer;
+  border-radius: 4px !important;
+  opacity: 0.85;
+}
+
+.text-action:hover {
+  opacity: 1;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+#new-folder-btn.text-action {
+  color: var(--accent-3) !important;
+}
+
+.tab-bar .tab {
+  border-radius: 999px;
+  border: 1px solid transparent;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.tab-bar .tab.active {
+  background: var(--accent-soft);
+  border-color: rgba(255, 107, 203, 0.35);
+  color: var(--text);
+}
+
+.engine-status {
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.folder-diagram-tree .folder-node.is-selected,
+.folder-diagram-tree .folder-node.selected {
+  background: var(--selection) !important;
+  border-color: var(--selection-border) !important;
+}
+
+.jot-ai-sidebar {
+  border-left: none;
+  background: linear-gradient(165deg, rgba(48, 28, 62, 0.95) 0%, rgba(22, 32, 58, 0.92) 45%, rgba(18, 24, 42, 0.98) 100%);
+  box-shadow: var(--buddy-glow), inset 1px 0 0 rgba(255, 180, 255, 0.12);
+  position: relative;
+}
+
+.jot-ai-sidebar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 80% 40% at 50% 0%, rgba(255, 107, 203, 0.12), transparent 60%);
+  pointer-events: none;
+}
+
+.jot-ai-sidebar-header {
+  border-bottom-color: rgba(255, 180, 255, 0.1);
+  position: relative;
+  z-index: 1;
+}
+
+.jot-ai-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.jot-ai-sidebar-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.jot-ai-sidebar-sub {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.jot-ai-empty-hero {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.jot-ai-empty {
+  color: var(--muted);
+}
+
+.jot-ai-msg-user {
+  background: linear-gradient(135deg, rgba(255, 107, 203, 0.95), rgba(196, 161, 255, 0.9));
+  color: #1a0e22;
+  box-shadow: 0 4px 16px rgba(255, 107, 203, 0.2);
+}
+
+.jot-ai-msg-assistant {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(180, 220, 255, 0.12);
+}
+
+.jot-ai-input-row {
+  position: relative;
+  z-index: 1;
+  border-top-color: rgba(255, 180, 255, 0.1);
+  padding-right: 36px;
+}
+
+.jot-ai-input {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(196, 161, 255, 0.25);
+  border-radius: 14px;
+  padding: 10px 14px;
+}
+
+.jot-ai-input:focus {
+  border-color: rgba(92, 225, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(92, 225, 255, 0.12);
+}
+
+.jot-ai-enter-hint {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  font-size: 14px;
+  color: var(--muted-2);
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.jot-ai-text-action {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.jot-ai-confirm-btn.jot-ai-text-action {
+  color: var(--accent-2);
+}
+
+.jot-ai-cancel-btn.jot-ai-text-action {
+  color: var(--muted);
+}
+
+.jot-ai-confirm-row {
+  background: rgba(255, 180, 100, 0.08);
+  border-top-color: rgba(255, 200, 120, 0.15);
+}
+
+.jot-ai-rules-btn {
+  border: none !important;
+}
+
+#query {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: rgba(196, 161, 255, 0.2);
+}
+
+#query:focus {
+  border-color: rgba(92, 225, 255, 0.45);
+  box-shadow: 0 0 0 3px rgba(92, 225, 255, 0.1);
+}
+
+.app-main {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 12px 0 0 0;
+}
+
+.split-handle {
+  background: linear-gradient(90deg, transparent, rgba(196, 161, 255, 0.35), transparent);
+  opacity: 0.65;
+}
+
+.split-handle--col {
+  background: linear-gradient(180deg, transparent, rgba(255, 107, 203, 0.35), transparent);
 }
 
