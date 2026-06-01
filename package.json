@@ -1,6 +1,6 @@
 {
   "name": "jot",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "description": "Jot — local-first notes with screen recording, proactive resurfacing, and AI agent",
   "main": "app-main.js",
   "scripts": {

@@ -12,6 +12,7 @@ if (process.platform === 'darwin') {
 
 contextBridge.exposeInMainWorld('mvp', {
   saveCapture: (text, appKey) => ipcRenderer.invoke('capture:save', text, appKey),
+  autoFileCaptureNote: (payload) => ipcRenderer.invoke('capture:auto-file', payload),
   createNote: (text) => ipcRenderer.invoke('notes:create', text),
   queryNotes: (query, folderId) => ipcRenderer.invoke('search:query', query, folderId),
   recentNotes: (folderId) => ipcRenderer.invoke('notes:recent', folderId),

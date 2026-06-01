@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
 const { JOT_AI_PRODUCT_GUIDE, getJotAiSystemPrompt } = require('../jot-ai/jotAiProductGuide');
 
 test('product guide includes core shortcuts', () => {
-  assert.match(JOT_AI_PRODUCT_GUIDE, /⌘P/);
+  assert.match(JOT_AI_PRODUCT_GUIDE, /⌘S/);
   assert.match(JOT_AI_PRODUCT_GUIDE, /⌘N/);
   assert.match(JOT_AI_PRODUCT_GUIDE, /⌘⇧R/);
   assert.match(JOT_AI_PRODUCT_GUIDE, /Recordings/);

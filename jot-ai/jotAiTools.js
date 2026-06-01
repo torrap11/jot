@@ -9,30 +9,96 @@
  * No Electron deps; safe to require in tests with a mock db.
  */
 
-function searchNotes(db, { query, limit = 20 } = {}) {
+const URL_RE = /https?:\/\/[^\s<>"')]+|(?:github\.com|youtu\.be|youtube\.com)[^\s]*/gi;
+
+function extractUrls(text) {
+  const raw = String(text || '');
+  const hits = raw.match(URL_RE) || [];
+  return [...new Set(hits.map((u) => u.trim()).filter(Boolean))].slice(0, 12);
+}
+
+function noteSummary(db, n) {
+  const body = String(n.text || '');
+  const hint = String(n.organize_hint || '');
+  const combined = hint ? `${body}\n${hint}` : body;
+  let folderName = null;
+  if (n.folder_id != null && typeof db.listFolders === 'function') {
+    const folders = db.listFolders();
+    const hit = folders.find((f) => Number(f.id) === Number(n.folder_id));
+    folderName = hit ? hit.name : null;
+  }
+  return {
+    id: n.id,
+    title: body.split('\n')[0].slice(0, 120) || '(empty)',
+    snippet: combined.slice(0, 400),
+    urls: extractUrls(combined),
+    folder_id: n.folder_id ?? null,
+    folder_name: folderName,
+    created_at: n.created_at || null,
+  };
+}
+
+function searchNotes(db, { query, limit = 40 } = {}) {
   const q = String(query || '').trim();
-  const cap = Math.min(Math.max(1, Number(limit) || 20), 100);
+  const cap = Math.min(Math.max(1, Number(limit) || 40), 100);
   const rows = db.searchNotes(q, cap);
   return {
-    notes: rows.map((n) => ({
-      id: n.id,
-      title: String(n.text || '').split('\n')[0].slice(0, 120),
-      snippet: String(n.text || '').slice(0, 240),
+    query: q,
+    count: rows.length,
+    notes: rows.map((n) => noteSummary(db, n)),
+  };
+}
+
+function listNotes(db, { folder_id, limit = 100 } = {}) {
+  const cap = Math.min(Math.max(1, Number(limit) || 100), 200);
+  const fid = folder_id == null ? 'all' : folder_id;
+  const rows = db.listRecent(cap, fid);
+  return {
+    folder_id: fid,
+    count: rows.length,
+    notes: rows.map((n) => noteSummary(db, n)),
+  };
+}
+
+function listFolders(db) {
+  if (typeof db.listFolders !== 'function') {
+    return { folders: [] };
+  }
+  const folders = db.listFolders();
+  return {
+    folders: folders.map((f) => ({
+      id: f.id,
+      name: f.name,
+      note_count:
+        typeof db.listRecent === 'function' ? db.listRecent(500, f.id).length : 0,
     })),
   };
 }
 
-function listNotes(db, { folder_id, limit = 50 } = {}) {
-  const cap = Math.min(Math.max(1, Number(limit) || 50), 200);
-  const fid = folder_id == null ? 'all' : folder_id;
-  const rows = db.listRecent(cap, fid);
-  return {
-    notes: rows.map((n) => ({
-      id: n.id,
-      title: String(n.text || '').split('\n')[0].slice(0, 120),
-      folder_id: n.folder_id ?? null,
-    })),
-  };
+/** Broad search for links / shareables (GitHub, YouTube, portfolio). */
+function findShareables(db, { limit = 50 } = {}) {
+  const terms = [
+    'github.com',
+    'github',
+    'youtube.com',
+    'youtu.be',
+    'parthha12',
+    'portfolio',
+    'shareable',
+    'jot',
+  ];
+  const seen = new Map();
+  for (const term of terms) {
+    const rows = db.searchNotes(term, 40, 'all');
+    for (const row of rows) {
+      if (!seen.has(row.id)) seen.set(row.id, row);
+    }
+  }
+  const notes = [...seen.values()]
+    .map((n) => noteSummary(db, n))
+    .filter((n) => n.urls.length > 0 || /github|youtube|youtu\.be|portfolio|parthha12/i.test(n.snippet))
+    .slice(0, Math.min(Math.max(1, Number(limit) || 50), 100));
+  return { count: notes.length, notes };
 }
 
 function getNote(db, { note_id } = {}) {
@@ -142,27 +208,48 @@ function createFolderTool(db, { name } = {}) {
 const TOOL_SCHEMAS = [
   {
     name: 'search_notes',
-    description: 'Search notes by text query. Returns id, title, snippet for each match.',
+    description:
+      'Search note body and organize hints. Multiple words are OR-matched (e.g. "youtube github" finds notes with either). Returns snippets and extracted urls.',
     input_schema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Search text' },
-        limit: { type: 'integer', description: 'Max results (default 20, max 100)' },
+        query: { type: 'string', description: 'Search text (words OR-matched)' },
+        limit: { type: 'integer', description: 'Max results (default 40, max 100)' },
       },
       required: ['query'],
     },
   },
   {
+    name: 'find_shareables',
+    description:
+      'Find notes that likely contain shareable links (GitHub, YouTube, portfolio). Run this when the user asks for links, shareables, or repo URLs in their notes.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'integer', description: 'Max notes to return (default 50)' },
+      },
+    },
+  },
+  {
     name: 'list_notes',
-    description: 'List notes in a folder or all notes. Returns id, title, folder_id.',
+    description:
+      'List recent notes in a folder or all notes. Returns id, title, snippet, urls, folder_name.',
     input_schema: {
       type: 'object',
       properties: {
         folder_id: {
           description: 'Folder id (integer), "all" (default), or "unfiled"',
         },
-        limit: { type: 'integer', description: 'Max results (default 50, max 200)' },
+        limit: { type: 'integer', description: 'Max results (default 100, max 200)' },
       },
+    },
+  },
+  {
+    name: 'list_folders',
+    description: 'List all folders with note counts. Use before list_notes when user mentions a folder by name.',
+    input_schema: {
+      type: 'object',
+      properties: {},
     },
   },
   {
@@ -267,7 +354,9 @@ const TOOL_SCHEMAS = [
 
 const TOOL_MAP = {
   search_notes: searchNotes,
+  find_shareables: findShareables,
   list_notes: listNotes,
+  list_folders: listFolders,
   get_note: getNote,
   move_to_folder: moveToFolder,
   set_tags: setTags,
@@ -276,4 +365,10 @@ const TOOL_MAP = {
   create_folder: createFolderTool,
 };
 
-module.exports = { TOOL_SCHEMAS, TOOL_MAP };
+module.exports = {
+  TOOL_SCHEMAS,
+  TOOL_MAP,
+  findShareables,
+  noteSummary,
+  extractUrls,
+};

@@ -11,8 +11,42 @@
 const fs = require('fs');
 const path = require('path');
 const { readAnthropicCredentials } = require('../aiOrganize');
-const { TOOL_SCHEMAS, TOOL_MAP } = require('./jotAiTools');
+const { TOOL_SCHEMAS, TOOL_MAP, findShareables } = require('./jotAiTools');
 const { getJotAiSystemPrompt } = require('./jotAiProductGuide');
+
+function looksLikeNoteLookup(message) {
+  const m = String(message || '').toLowerCase();
+  return /(github|youtube|youtu\.be|shareable|portfolio|repo|link|url|notes?|find|search|provide|share)/i.test(m);
+}
+
+function buildNoteLookupPrefetch(db, message) {
+  if (!looksLikeNoteLookup(message)) return null;
+  const shareables = findShareables(db, { limit: 30 });
+  const github = db.searchNotes('github', 25, 'all');
+  const youtube = db.searchNotes('youtube', 25, 'all');
+  const merged = new Map();
+
+  const add = (item) => {
+    if (!item || item.id == null) return;
+    if (merged.has(item.id)) return;
+    const body = item.snippet != null ? item.snippet : String(item.text || '');
+    merged.set(item.id, {
+      id: item.id,
+      title: item.title || String(item.text || '').split('\n')[0].slice(0, 100),
+      snippet: body.slice(0, 300),
+      urls: item.urls || [],
+      folder_id: item.folder_id ?? null,
+      folder_name: item.folder_name || null,
+    });
+  };
+
+  for (const n of shareables.notes) add(n);
+  for (const row of github) add(row);
+  for (const row of youtube) add(row);
+
+  if (merged.size === 0) return null;
+  return [...merged.values()].slice(0, 20);
+}
 
 const MAX_TOOL_ROUNDS = 12;
 
@@ -67,7 +101,11 @@ async function runJotAiAgent(db, { history = [], message, userDataDir, logFile }
     .filter((m) => m && (m.role === 'user' || m.role === 'assistant'))
     .slice(-16);
 
-  const messages = [...trimmedHistory, { role: 'user', content: String(message || '') }];
+  const prefetch = buildNoteLookupPrefetch(db, message);
+  const userContent = prefetch
+    ? `${String(message || '')}\n\n[System: pre-searched your note library — ${prefetch.length} hit(s). Use these ids; call get_note for full text. Do not say nothing was found if matches exist.]\n${JSON.stringify(prefetch, null, 2)}`
+    : String(message || '');
+  const messages = [...trimmedHistory, { role: 'user', content: userContent }];
   let confirmRequired = null;
   let rounds = 0;
 

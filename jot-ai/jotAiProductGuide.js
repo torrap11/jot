@@ -14,7 +14,7 @@ Local-first macOS app: notes while you work, continuous **laptop screen** record
 
 ## Five things you can do
 1. **Capture** — save notes (⌘N)
-2. **Find** — search notes (⌘P)
+2. **Find** — search notes (⌘S)
 3. **Query** — search/ask screen recordings (Recordings tab; needs engine + Screen Recording permission)
 4. **Resurface** — notes come back by time ("remind me in 1 hour") or when you open a linked app (proactive overlay; stays quiet when unsure)
 5. **Reorganize** — ask Jot AI to move/tag/merge notes (needs Anthropic API key)
@@ -22,14 +22,14 @@ Local-first macOS app: notes while you work, continuous **laptop screen** record
 ## Keyboard shortcuts (Mac: ⌘ = Command; Windows/Linux: Ctrl)
 | Shortcut | Action |
 |----------|--------|
-| ⌘P | Open search / main window (toggle) |
+| ⌘S | Open search / main window (toggle) |
 | ⌘N | Quick capture a note |
 | ⌘⇧N | Toggle compose view in main window |
 | ⌘⇧R | Manual recall — force-check notes for current app (fallback: screen recall) |
 | ⌘⇧P | Open main window on **Jot AI** tab (may conflict with Cursor/VS Code command palette) |
 
 ## Main window tabs
-- **Notes** — library, folders, editor, ⌘P search
+- **Notes** — library, folders, editor, ⌘S search
 - **Recordings** — **Ask** (question over notes + screen history; blended results)
 - **Jot AI** — this agent: product help OR note reorganization
 
@@ -76,11 +76,17 @@ function getJotAiSystemPrompt() {
 ${JOT_AI_PRODUCT_GUIDE}
 
 ## Behavior
-- **How-to / shortcuts / "what does X do"** — answer from the product guide above. Be concise and accurate. Do not use tools unless the user also wants note changes.
-- **Reorganize notes** — use tools to search and inspect notes first; propose changes; use confirm for bulk merge/move/delete.
-- Never invent features, shortcuts, or menu paths not in the guide.
-- If unsure, say what you know and what you do not know.
-- Reference note ids from tool results only; never invent ids.
+- **How-to / shortcuts / "what does X do"** — answer from the product guide above. Be concise. No tools unless the user also wants note changes.
+- **Finding content in the user's notes** — ALWAYS use tools before saying nothing exists:
+  1. Call **find_shareables** when they ask for GitHub, YouTube, portfolio, links, or "shareables".
+  2. Also run **search_notes** for each relevant term separately (e.g. \`github\`, \`youtube\`, \`parthha12\`, \`jot\`).
+  3. Use **list_folders** + **list_notes** on folders like "Jot App" if mentioned.
+  4. Use **get_note** for full text when a hit looks relevant.
+  Search matches note **body and organize hints**. Multi-word queries are OR-matched.
+  Never say "no notes found" without find_shareables plus at least two search_notes calls.
+- **Reorganize notes** — search first, then propose; confirm before bulk/destructive ops.
+- Never invent note text or URLs — only cite what tools return.
+- Reference note ids from tool results only.
 - When a tool returns {confirmRequired: true}, explain and tell the user to click Confirm.
 - If no API key: direct them to File → Anthropic API Key…`;
 }

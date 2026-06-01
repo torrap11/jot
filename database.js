@@ -723,7 +723,7 @@ function listRecent(limit = 200, folderId = 'all') {
   params.push(limit);
   return getDb()
     .prepare(`
-      SELECT n.id, n.text, n.created_at, n.folder_id
+      SELECT n.id, n.text, n.created_at, n.folder_id, n.organize_hint
       FROM notes n
       LEFT JOIN folders f ON f.id = n.folder_id
       WHERE ${whereFolder}
@@ -735,33 +735,45 @@ function listRecent(limit = 200, folderId = 'all') {
     .all(...params);
 }
 
-function searchNotes(query, limit = 20, folderId = 'all') {
-  const q = normalizeText(query).toLowerCase();
-  if (!q) return listRecent(limit, folderId);
+function tokenizeSearchQuery(query) {
+  return normalizeText(query)
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length > 0);
+}
 
-  const like = `%${q}%`;
+function searchNotes(query, limit = 20, folderId = 'all') {
+  const tokens = tokenizeSearchQuery(query);
+  if (tokens.length === 0) return listRecent(limit, folderId);
+
   const parsedFolder = parseFolderFilter(folderId);
-  const params = [q, `${q}%`, like];
-  const whereFolder = buildFolderWhereClause(parsedFolder, params);
+  const params = [];
+  const whereFolder = buildFolderWhereClause(parsedFolder, params, 'n');
+
+  const tokenClauses = [];
+  for (const token of tokens) {
+    const like = `%${token}%`;
+    params.push(like, like);
+    tokenClauses.push(
+      "(lower(n.text) LIKE ? OR lower(COALESCE(n.organize_hint, '')) LIKE ?)"
+    );
+  }
+  const whereText =
+    tokens.length === 1 ? tokenClauses[0] : `(${tokenClauses.join(' OR ')})`;
+
   params.push(limit);
   return getDb()
     .prepare(`
-      SELECT id, text, created_at, folder_id,
+      SELECT n.id, n.text, n.created_at, n.folder_id, n.organize_hint,
         CASE
-          WHEN lower(text) = ? THEN 100
-          WHEN lower(text) LIKE ? THEN 60
-          ELSE 20
-        END + (
-          CASE
-            WHEN datetime(created_at) >= datetime('now', '-1 day') THEN 15
-            WHEN datetime(created_at) >= datetime('now', '-7 days') THEN 8
-            ELSE 0
-          END
-        ) AS score
-      FROM notes
-      WHERE lower(text) LIKE ?
+          WHEN datetime(n.created_at) >= datetime('now', '-1 day') THEN 15
+          WHEN datetime(n.created_at) >= datetime('now', '-7 days') THEN 8
+          ELSE 0
+        END AS score
+      FROM notes n
+      WHERE ${whereText}
         AND ${whereFolder}
-      ORDER BY score DESC, datetime(created_at) DESC
+      ORDER BY score DESC, datetime(n.created_at) DESC, n.id DESC
       LIMIT ?
     `)
     .all(...params);

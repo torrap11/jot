@@ -5,7 +5,7 @@
 
 /**
  * Main process: tray-less MVP with windows (capture, search, overlay) + app watcher.
- * Flows: ⌘P search, ⌘N capture (from search), quick capture save, note CRUD/links, overlay actions,
+ * Flows: ⌘S search, ⌘N capture (from search), quick capture save, note CRUD/links, overlay actions,
  * frontmost-app polling → surfaceEngine → overlay.
  */
 
@@ -88,6 +88,8 @@ const RECALL_DISMISS_SUPPRESS_MS = 20 * 60 * 1000;
 let blurHideSuppressCount = 0;
 
 const CLICK_AWAY_HIDE_DELAY_MS = 120;
+const AUTO_FILE_HINT =
+  'Auto-file this note into the best folder based on its content. Create a new folder if none fit.';
 /** Ignore blur-after-minimize races (traffic lights / dock). */
 const BLUR_HIDE_IGNORE_MS = 450;
 
@@ -426,31 +428,55 @@ async function flushSearchNoteBeforeHide() {
   }
 }
 
-async function autoOrganizeInBackground(noteId, noteText) {
+async function autoOrganizeInBackground(noteId, noteText, organizeHint = AUTO_FILE_HINT) {
   try {
     const userDataDir = app.getPath('userData');
     const result = await aiOrganize.organizeNoteFromHint(db, {
       noteId,
       noteText,
-      organizeHint: 'Auto-file this note into the best folder based on its content. Create a new folder if none fit.',
+      organizeHint: String(organizeHint || '').trim() || AUTO_FILE_HINT,
       userDataDir,
     });
-    if (result.skipped || result.error) return;
+    if (result.skipped || result.error) return result;
     if (searchWin && !searchWin.isDestroyed()) {
       searchWin.webContents.send('notes-changed');
     }
-  } catch {
-    /* non-blocking */
+    return result;
+  } catch (e) {
+    return { error: e.message || String(e) };
   }
+}
+
+function shouldAutoFileCaptureNote(noteText, folderValue, organizeHint) {
+  const text = String(noteText || '').trim();
+  if (!text) return false;
+  const isUnfiled = !folderValue || folderValue === 'unfiled';
+  const userHint = String(organizeHint || '').trim();
+  if (!userHint && !isUnfiled) return false;
+  return true;
+}
+
+async function autoFileCaptureNoteIfNeeded(payload) {
+  const noteId = Number(payload?.noteId);
+  const noteText = String(payload?.noteText || '');
+  const folderValue = payload?.folderValue ?? 'unfiled';
+  const organizeHint = String(payload?.organizeHint || '').trim();
+  if (!Number.isFinite(noteId) || !shouldAutoFileCaptureNote(noteText, folderValue, organizeHint)) {
+    return { skipped: true, reason: 'not_applicable' };
+  }
+  return autoOrganizeInBackground(noteId, noteText, organizeHint || AUTO_FILE_HINT);
 }
 
 async function flushCaptureBeforeHide() {
   if (!captureWin || captureWin.isDestroyed()) return;
   try {
-    await captureWin.webContents.executeJavaScript(
+    const result = await captureWin.webContents.executeJavaScript(
       'typeof window.__jotFlushCapture === "function" ? window.__jotFlushCapture() : null',
       true
     );
+    if (result?.ok && result.noteId) {
+      await autoFileCaptureNoteIfNeeded(result);
+    }
   } catch {
     /* renderer not ready */
   }
@@ -565,7 +591,7 @@ function getOverlayWindow() {
 /**
  * Point used to pick which display to center Jot windows on.
  * Uses the frontmost *other* app's main window when possible; if the frontmost app is
- * Jot itself (stale frame on another Space), uses the mouse so ⌘P opens on the Space
+ * Jot itself (stale frame on another Space), uses the mouse so ⌘S opens on the Space
  * you're actually using.
  */
 function getPlacementAnchorPoint() {
@@ -909,7 +935,7 @@ function registerShortcut(accelerator, handler) {
 }
 
 function registerShortcuts() {
-  registerShortcut('CommandOrControl+P', () => showSearchWindow({ toggle: true }));
+  registerShortcut('CommandOrControl+S', () => showSearchWindow({ toggle: true }));
   registerShortcut('CommandOrControl+N', () => showCaptureWindow());
   registerShortcut('CommandOrControl+Shift+N', () => void toggleComposeView());
   registerShortcut('CommandOrControl+Shift+R', () => void runManualRecall());
@@ -1570,6 +1596,13 @@ function registerIpc() {
     if (note && appKey) db.linkNoteToApp(note.id, appKey);
     if (note) notifySearchNotesChanged();
     return note;
+  });
+  ipcMain.handle('capture:auto-file', async (_event, payload) => {
+    try {
+      return await autoFileCaptureNoteIfNeeded(payload || {});
+    } catch (e) {
+      return { error: e.message || String(e) };
+    }
   });
   ipcMain.handle('notes:create', (_event, text) => {
     const trimmed = String(text || '').trim();

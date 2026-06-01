@@ -10,7 +10,7 @@
 2. **Natural-language remind workflows** — e.g. *"remind me to check deploy when I open Cursor"* creates a note that resurfaces when that app is frontmost.
 3. **AI auto-filing** — New notes file into folders on save (optional Anthropic API key). Batch **File Notes** and custom organization prompts.
 4. **Jot AI** — Floating assistant (⌘⇧P) that knows the product and can search, move, tag, and reorganize your notes via tools.
-5. **System-wide shortcuts** — ⌘P search, ⌘N quick capture, ⌘⇧R manual recall—from any app, tray-less.
+5. **System-wide shortcuts** — ⌘S search, ⌘N quick capture, ⌘⇧R manual recall—from any app, tray-less.
 
 ## Download (macOS)
 
@@ -36,7 +36,7 @@ Full install and troubleshooting: [INSTALL.md](./INSTALL.md)
 
 | Shortcut | Action |
 |----------|--------|
-| ⌘P | Toggle notes window |
+| ⌘S | Toggle notes window |
 | ⌘N | Quick capture |
 | ⌘⇧N | Compose in main window |
 | ⌘⇧R | Manual recall |
