@@ -62,6 +62,7 @@ Monorepo: Electron app at repo root, Rust engine in `engine/`.
 ```bash
 git clone https://github.com/parthha12/jot.git
 cd jot
+GIT_LFS_SKIP_SMUDGE=1 git lfs pull   # if LFS smudge fails on clone
 ./scripts/setup-workspace.sh   # npm install + engine deps
 ./scripts/build-engine.sh      # first time: 5–15 min
 ./scripts/run-dev.sh           # or: npm start
