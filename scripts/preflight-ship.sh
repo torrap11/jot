@@ -11,7 +11,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JOT_DIR="$(dirname "$SCRIPT_DIR")"
-WORKSPACE="$(dirname "$JOT_DIR")"
 
 PASS=0
 FAIL=0
@@ -34,13 +33,13 @@ else
 fi
 
 # 2. Engine binary exists
-ENGINE_BIN="$WORKSPACE/proactive-recall/target/release/screenpipe"
+ENGINE_BIN="$JOT_DIR/engine/target/release/screenpipe"
 echo "2. Engine binary"
 if [ -f "$ENGINE_BIN" ]; then
   ok "Engine binary found at $ENGINE_BIN"
 else
   fail "Engine binary missing: $ENGINE_BIN"
-  echo "     Build with: cd proactive-recall && cargo build --release"
+  echo "     Build with: ./scripts/build-engine.sh"
 fi
 
 # 3. Entitlements file exists

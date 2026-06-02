@@ -57,13 +57,24 @@ Jot opens at login by default (hidden until you use a shortcut). Add **Cursor** 
 
 ## Develop
 
+Monorepo: Electron app at repo root, Rust engine in `engine/`.
+
 ```bash
-npm install
-npm start
+git clone https://github.com/parthha12/jot.git
+cd jot
+./scripts/setup-workspace.sh   # npm install + engine deps
+./scripts/build-engine.sh      # first time: 5–15 min
+./scripts/run-dev.sh           # or: npm start
 npm test
-npm run preflight   # before release
-npm run dist:arm64  # → dist/Jot-<version>.dmg
+npm run preflight              # before release
+npm run dist:arm64             # → dist/Jot-<version>.dmg
 ```
+
+| Path | Role |
+|------|------|
+| `/` | Jot Electron app (notes, overlay, Jot AI) |
+| `engine/` | Screenpipe + proactive recall (Rust, `:3030`) |
+| `integration/` | Sidecar manager + API clients |
 
 ## Permissions (macOS)
 

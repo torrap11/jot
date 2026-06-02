@@ -1,22 +1,22 @@
-# Jot AI agent — conversational note interaction
+# Pakr agent — conversational note interaction
 
-The **Jot AI agent** is Jot’s on-demand LLM surface for **reorganizing and interacting with notes** when you have manual specifications. It is **not** the proactive resurfacing system.
+The **Pakr agent** is PakrAI’s on-demand LLM surface for **reorganizing and interacting with notes** when you have manual specifications. It is **not** the proactive resurfacing system.
 
 ---
 
 ## Purpose
 
-Jot is the **in-app expert** for Jot: shortcuts, tabs, resurfacing, permissions, **and** note reorganization.
+Pakr is the **in-app expert** for PakrAI: shortcuts, tabs, resurfacing, permissions, **and** note reorganization.
 
-| Jot AI agent | Proactive overlay |
+| Pakr agent | Proactive overlay |
 |------------|-------------------|
 | User opens chat | System shows card |
-| Answers how-to from `jot/jotProductGuide.js` | N/A |
+| Answers how-to from `jot/pakr/pakrProductGuide.js` | N/A |
 | Mutates notes (with confirm) | Read-only snippet + actions |
 | LLM allowed | No LLM |
 | Slow OK (seconds) | &lt;500ms path for context |
 
-**Product knowledge** lives in `jot/jotProductGuide.js` — update when shortcuts or UI change.
+**Product knowledge** lives in `jot/pakr/pakrProductGuide.js` — update when shortcuts or UI change.
 
 ---
 
@@ -24,19 +24,19 @@ Jot is the **in-app expert** for Jot: shortcuts, tabs, resurfacing, permissions,
 
 ### Placement
 
-- Dedicated tab **Jot** in main window (preferred over burying in settings).
-- Optional: ⌘⇧P opens Jot with focus.
+- Dedicated tab **Pakr** in main window (preferred over burying in settings).
+- Optional: ⌘⇧P opens Pakr with focus.
 
 ### Conversation pattern
 
 1. User describes intent in natural language.
-2. Jot proposes **plan** (bullet list) + **preview** of DB changes.
+2. Pakr proposes **plan** (bullet list) + **preview** of DB changes.
 3. User **Confirm** / **Edit** / **Cancel**.
 4. On confirm, main process executes tools; transcript stays in session.
 
 ### Empty state copy
 
-> “Tell Jot how to reorganize your notes. Example: Move all notes about Client A into the Q2 folder and tag them `client-a`.”
+> “Tell Pakr how to reorganize your notes. Example: Move all notes about Client A into the Q2 folder and tag them `client-a`.”
 
 ---
 
@@ -62,7 +62,7 @@ Implement as IPC tools in main process; LLM receives JSON schema.
 ## System prompt (template)
 
 ```text
-You are Jot, the reorganizer for Jot. You only change the user's local notes database.
+You are Pakr, the reorganizer for PakrAI. You only change the user's local notes database.
 Rules:
 - Propose changes before executing destructive or bulk operations.
 - Reference note ids from tool results.
@@ -83,7 +83,7 @@ Rules:
 ## Safety
 
 - **Confirm** modal for: merge &gt;2 notes, delete, move &gt;10 notes.
-- Log tool calls to `~/Library/Logs/Jot/jot-agent.log` (debug).
+- Log tool calls to `~/Library/Logs/PakrAI/pakr-agent.log` (debug).
 - No automatic runs on timer (unlike “night organize”).
 
 ---
@@ -92,11 +92,11 @@ Rules:
 
 | Step | File(s) |
 |------|---------|
-| 1 | `jot/jotTools.js` — pure functions calling `db.js` |
-| 2 | `jot/jotAgent.js` — LLM loop + tool dispatch |
-| 3 | `app-main.js` — `ipcMain.handle('jota:chat', ...)` |
-| 4 | `renderer/jot-panel.html` or tab in `index.html` |
-| 5 | `tests/test-jot-tools.js` — no network |
+| 1 | `jot/pakr/pakrTools.js` — pure functions calling `db.js` |
+| 2 | `jot/pakr/pakrAgent.js` — LLM loop + tool dispatch |
+| 3 | `app-main.js` — `ipcMain.handle('pakra:chat', ...)` |
+| 4 | `renderer/pakr-panel.html` or tab in `index.html` |
+| 5 | `tests/test-pakr-tools.js` — no network |
 
 ---
 
@@ -108,6 +108,6 @@ Rules:
 
 ---
 
-## Not in Jot
+## Not in PakrAI
 
-There is **no** Ask-over-screen or Rewind tab. Jot is the only LLM chat surface, and it only mutates **notes** ([SCOPE.md](./SCOPE.md)).
+There is **no** Ask-over-screen or Rewind tab. Pakr is the only LLM chat surface, and it only mutates **notes** ([SCOPE.md](./SCOPE.md)).

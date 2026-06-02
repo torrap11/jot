@@ -1,9 +1,9 @@
 # Integration — Screenpipe × Jot
 
-Place shared product code here as you build the combined experience:
+Bridge between the Jot Electron shell and the Rust engine in `engine/`:
 
-- Bridge APIs (e.g. Jot reading Screenpipe search / recall events)
-- Shared event contracts (app switch, surface / silence)
-- Launchers or a thin host app
+- `engineManager.js` — spawn and health-check the `screenpipe` sidecar
+- `screenpipeClient.js` — REST client for localhost:3030
+- `recallClient.js` — proactive recall API
 
-Keep **Screenpipe changes** in `proactive-recall/` and **Jot changes** in `jot/` until a clear boundary emerges; move only true shared code into this folder.
+All product code lives in this repo: app at repo root, engine in `engine/`.

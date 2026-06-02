@@ -1,4 +1,4 @@
-# Jot — manual QA checklist
+# PakrAI — manual QA checklist
 
 Run after `./scripts/run-dev.sh` or `cd . && npm start`. Grant **Screen Recording**, **Automation**, and **Accessibility** when prompted.
 
@@ -6,8 +6,8 @@ Run after `./scripts/run-dev.sh` or `cd . && npm start`. Grant **Screen Recordin
 
 ## Setup
 
-- [ ] App window title shows **Jot**
-- [ ] Tabs: **Notes**, **Recordings**, **Jot**
+- [ ] App window title shows **PakrAI**
+- [ ] Tabs: **Notes**, **Recordings**, **Pakr**
 - [ ] Engine dot / status shows **running** (after ~30s)
 - [ ] `curl -sf http://127.0.0.1:3030/health` returns OK
 
@@ -41,9 +41,9 @@ Run after `./scripts/run-dev.sh` or `cd . && npm start`. Grant **Screen Recordin
 
 ---
 
-## Jot agent
+## Pakr agent
 
-- [ ] **Jot** tab opens; **⌘⇧P** focuses Jot
+- [ ] **Pakr** tab opens; **⌘⇧P** focuses Pakr
 - [ ] Without API key → clear message to add key
 - [ ] With key: “What does ⌘⇧R do?” answers from product knowledge (no wrong shortcuts)
 - [ ] With key: “list my last 5 notes” returns results
@@ -68,4 +68,4 @@ cd . && npm run preflight
 cd . && npm run dist:arm64
 ```
 
-- [ ] `dist/Jot-2.1.0.dmg` opens and app launches
+- [ ] `dist/PakrAI-2.0.0.dmg` opens and app launches

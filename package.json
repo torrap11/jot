@@ -48,7 +48,7 @@
     ],
     "extraResources": [
       {
-        "from": "../proactive-recall/target/release/screenpipe",
+        "from": "engine/target/release/screenpipe",
         "to": "screenpipe",
         "filter": ["**/*"]
       }

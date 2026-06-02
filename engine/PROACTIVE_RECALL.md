@@ -1,10 +1,10 @@
-# Proactive recall (this repo)
+# Proactive recall (engine/)
 
 **Proactive recall = right memory × right moment × fast enough × often silent × user still in control.**
 
-This repository is **[Screenpipe](https://github.com/screenpipe/screenpipe)** plus proactive-recall research, Claude Code build prompts, and stub crate `crates/screenpipe-recall`.
+This directory is the Rust **engine** inside the [Jot monorepo](https://github.com/parthha12/jot). It is upstream [Screenpipe](https://github.com/screenpipe/screenpipe) plus proactive-recall research and the `screenpipe-recall` crate.
 
-**Screenpipe × Jot:** open the multi-repo workspace at `../screenpipe-x-jot/screenpipe-x-jot.code-workspace` (sibling folder under `github-real/`).
+> **Note:** This code formerly lived in `parthha12/proactive-recall`. Clone only `parthha12/jot` — the engine is at `engine/`.
 
 ## Repo layout (verified)
 

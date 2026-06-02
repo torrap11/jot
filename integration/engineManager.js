@@ -31,8 +31,7 @@ function getDefaultBinPath() {
   const legacyBundled = path.join(__dirname, '..', '..', 'Resources', 'screenpipe');
   if (fs.existsSync(legacyBundled)) return legacyBundled;
   const devCandidates = [
-    path.join(__dirname, '..', '..', 'proactive-recall', 'target', 'release', 'screenpipe'),
-    path.join(__dirname, '..', 'proactive-recall', 'target', 'release', 'screenpipe'),
+    path.join(__dirname, '..', 'engine', 'target', 'release', 'screenpipe'),
   ];
   for (const candidate of devCandidates) {
     if (fs.existsSync(candidate)) return candidate;

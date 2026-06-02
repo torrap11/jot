@@ -1,4 +1,4 @@
-# Jot — dev setup
+# PakrAI — dev setup
 
 Includes **screen recording** + **query** via Screenpipe engine.
 

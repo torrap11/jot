@@ -53,3 +53,12 @@ yarn-error.log*
 
 # Local exports / chat logs
 conversation-export-*.md
+
+# Rust engine (Screenpipe + recall) — build artifacts and local data
+engine/target/
+engine/data/
+engine/text_json/
+engine/.env
+engine/.env.local
+engine/.secrets
+engine/.worktrees/

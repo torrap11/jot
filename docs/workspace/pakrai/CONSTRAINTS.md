@@ -1,4 +1,4 @@
-# Jot — constraints
+# PakrAI — constraints
 
 [SCOPE.md](./SCOPE.md)
 
@@ -11,7 +11,7 @@
 | App switch overlay | **No** |
 | Recordings **search** | **No** (FTS) |
 | Recordings **ask** | **Optional** (user-initiated) |
-| Jot AI agent | **Yes** |
+| Pakr agent | **Yes** |
 
 ---
 

@@ -1,8 +1,8 @@
-# Jot — references
+# PakrAI — references
 
 ---
 
-## Jot specs
+## PakrAI specs
 
 [SCOPE.md](./SCOPE.md) · [QUERY-RECORDINGS.md](./QUERY-RECORDINGS.md) · [README.md](./README.md)
 
@@ -28,4 +28,4 @@
 
 ## Legacy PRD
 
-`PRD.md` — mostly aligned on engine + query; Jot scope doc wins on notes-first + no mic.
+`PRD.md` — mostly aligned on engine + query; PakrAI scope doc wins on notes-first + no mic.

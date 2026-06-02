@@ -1,0 +1,15 @@
+{
+  "folders": [
+    {
+      "name": "Jot",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/engine/target": true,
+      "**/node_modules": true,
+      "**/dist": true
+    }
+  }
+}

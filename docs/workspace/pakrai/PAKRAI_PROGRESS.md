@@ -1,9 +1,9 @@
-# Jot build progress
+# PakrAI build progress
 
 **Status:** `beta-ready`  
 **Current phase:** P5 (human: TCC + optional notarization)  
 **Scope:** [SCOPE.md](./SCOPE.md)  
-**Last updated:** 2026-05-24
+**Last updated:** 2026-05-23
 
 ---
 
@@ -12,13 +12,13 @@
 | Phase | Name | Status | Exit verified |
 |-------|------|--------|---------------|
 | — | Legacy 0–4 (Jot × Screenpipe) | ✅ | `docs/claude-code/CLAUDE_PROGRESS.md` |
-| P0 | Product identity + keep recording | ✅ | Jot strings; engine auto-start |
+| P0 | Product identity + keep recording | ✅ | PakrAI strings; engine auto-start |
 | P6 | Query screen recordings | ✅ | Recordings tab; search + ask + citations |
 | P1 | Time resurfacing | ✅ | `timeParser.js`, `resurfaceScheduler.js`, DB columns |
-| P2 | Jot AI agent | ✅ | `jot/`, tab, `jota:chat`, tools tests |
+| P2 | Pakr agent | ✅ | `pakr/`, tab, `pakra:chat`, tools tests |
 | P3 | Context intelligence | ✅ | `surfaceEngine` whyNow tags; notes-first switch |
 | P4 | Search polish | ✅ | `extractSnippet`, `highlightSnippet`, recents on empty ⌘P |
-| P5 | Ship Jot | ✅ | v2.1.1 dmg; integration bundled; screen-only (`--disable-audio`) |
+| P5 | Ship PakrAI | 🟡 | Engine in dmg; preflight script; notarization = human |
 
 ---
 
@@ -28,7 +28,6 @@
 2026-05-23 — verify — cd . && npm test — 120/120 pass
 2026-05-23 — verify — cargo test -p screenpipe-recall — 21/21 pass
 2026-05-23 — fix — preflight uses npm test exit code; notes-only SSE overlay; manual recall notes-first
-2026-05-24 — ship — v2.1.1: screen-only engine, Recordings Ask-only, integration/ in repo
 ```
 
 ---
@@ -41,9 +40,9 @@ jot/app-main.js
 jot/appWatcher.js
 jot/aiOrganize.js
 jot/noteCleanup.js
-docs/manual-qa.md
-docs/JOT_PROGRESS.md
-docs/PHASES.md
+docs/pakrai/manual-qa.md
+docs/pakrai/PAKRAI_PROGRESS.md
+docs/pakrai/PHASES.md
 docs/STATUS.md
 ```
 
@@ -61,7 +60,7 @@ docs/STATUS.md
 
 ## Blockers (human-only)
 
-- [ ] macOS TCC: Screen Recording, Automation, Accessibility for Jot.app
+- [ ] macOS TCC: Screen Recording, Automation, Accessibility for PakrAI.app
 - [ ] Optional: `build/icon.icns` + notarized release
 
 ---

@@ -4,15 +4,15 @@
 
 | Check | Result |
 |-------|--------|
-| Spec | `docs/jot/` |
+| Spec | `docs/` |
 | `npm test` (jot) | 30/30 |
-| Progress | `docs/jot/JOT_PROGRESS.md` → **beta-ready** |
-| Manual QA | `docs/jot/manual-qa.md` |
+| Progress | `docs/JOT_PROGRESS.md` → **beta-ready** |
+| Manual QA | `docs/manual-qa.md` |
 
 ### Run
 
 ```bash
-cd jot
+cd .
 npm install
 npm start
 ```
@@ -29,5 +29,5 @@ npm start
 
 | Check | Result |
 |-------|--------|
-| `screenpipe` binary | `proactive-recall/target/release/screenpipe` |
+| `screenpipe` binary | `engine/target/release/screenpipe` |
 | Scripts | `run-dev.sh`, `verify-stack.sh`, `build-engine.sh` |
